@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Alibaba Token Finalizer</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f2f5; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 500px; width: 100%; }
+        button { background: #ff6600; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; cursor: pointer; transition: background 0.3s; }
+        button:hover { background: #e65c00; }
+        pre { background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: left; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; border: 1px solid #ddd; margin-top: 1rem; display: none; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #ff6600; border-radius: 50%; width: 30px; height: 30px; animation: spin 2s linear infinite; display: none; margin: 10px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Final Step: Get Tokens</h1>
+        <p>Click the button below to exchange your code for the final Access Tokens.</p>
+        <button id="btn" onclick="getTokens()">Get Final Tokens</button>
+        <div id="loader" class="loader"></div>
+        <pre id="result"></pre>
+    </div>
+
+    <script>
+        async function getTokens() {
+            const btn = document.getElementById('btn');
+            const loader = document.getElementById('loader');
+            const result = document.getElementById('result');
+            
+            btn.style.display = 'none';
+            loader.style.display = 'block';
+            result.style.display = 'none';
+
+            const url = 'https://openapi-auth.alibaba.com/oauth/token';
+            const params = new URLSearchParams();
+            params.append('grant_type', 'authorization_code');
+            params.append('code', '3_502296_R9TZtH18IXhexXsHDmyDjQJ221');
+            params.append('client_id', '502296');
+            params.append('client_secret', 'vwTUfjBmG7MLdyjsZnOC9pfJsy9hGo1V');
+            params.append('redirect_uri', 'https://example.com/callback');
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: params
+                });
+
+                const data = await response.json();
+                loader.style.display = 'none';
+                result.style.display = 'block';
+                
+                if (data.access_token) {
+                    result.innerHTML = `<strong>SUCCESS! Copy these:</strong>\n\nACCESS_TOKEN: ${data.access_token}\n\nREFRESH_TOKEN: ${data.refresh_token}`;
+                    result.style.color = "green";
+                } else {
+                    result.textContent = "Error: " + JSON.stringify(data, null, 2);
+                    result.style.color = "red";
+                }
+            } catch (error) {
+                loader.style.display = 'none';
+                result.style.display = 'block';
+                result.textContent = "Network Error: " + error.message + "\n\n(Make sure you don't have an ad-blocker blocking the Alibaba request!)";
+                result.style.color = "red";
+            }
+        }
+    </script>
+</body>
+</html>

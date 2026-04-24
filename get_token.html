@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Alibaba Token Finder</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f4f4f9; }
+        .card { background: white; padding: 40px; borderRadius: 12px; boxShadow: 0 4px 12px rgba(0,0,0,0.1); textAlign: center; }
+        button { background: #ff6a00; color: white; border: none; padding: 15px 30px; fontSize: 18px; borderRadius: 8px; cursor: pointer; fontWeight: bold; }
+        button:hover { background: #e65f00; }
+        p { color: #666; marginBottom: 30px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Alibaba Bot Setup</h1>
+        <p>Click the button below to authorize your shop with the bot.</p>
+        
+        <button onclick="authorize()">Click to Authorize Shop</button>
+
+        <script>
+            function authorize() {
+                const appKey = '502296';
+                const redirect = encodeURIComponent('https://example.com/callback');
+                
+                // Final corrected path for International GGS sellers
+                const url = `https://openapi-auth.alibaba.com/oauth/authorize?response_type=code&client_id=${appKey}&redirect_uri=${redirect}`;
+                window.location.href = url;
+            }
+        </script>
+    </div>
+</body>
+</html>
