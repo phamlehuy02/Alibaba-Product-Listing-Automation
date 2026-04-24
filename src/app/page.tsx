@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Coffee, Plus, Zap, Send, Layers, Settings, Calendar, Play, Pause, History } from 'lucide-react';
 import ProductForm from '@/components/ProductForm';
 import { getCampaignsAction, toggleCampaignAction } from '@/app/actions/campaigns';
+import Link from 'next/link';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -38,6 +39,11 @@ export default function Home() {
           <h2 style={{ fontSize: '2.5rem', color: 'white' }}>Alibaba <span style={{ color: 'var(--primary)' }}>Bot Dashboard</span></h2>
         </div>
         <div style={{ display: 'flex', gap: '16px' }}>
+          <Link href="/settings">
+            <button className="btn-primary" style={{ background: 'var(--glass)', border: '1px solid var(--border)' }}>
+               <Settings size={18} /> Settings
+            </button>
+          </Link>
           <button className="btn-primary" style={{ background: 'var(--glass)', border: '1px solid var(--border)' }}>
              <History size={18} /> View Logs
           </button>

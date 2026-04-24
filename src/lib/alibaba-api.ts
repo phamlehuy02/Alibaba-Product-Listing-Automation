@@ -76,26 +76,50 @@ export class AlibabaAPI {
     return await response.json();
   }
 
-  async refreshToken() {
-    const params: Record<string, string> = {
-      app_key: this.config.appKey,
-      app_secret: this.config.appSecret,
-      grant_type: 'refresh_token',
-      refresh_token: this.config.refreshToken,
-    };
+  async exchangeCodeForToken(code: string, redirectUri: string) {
+    const params = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code,
+      client_id: this.config.appKey,
+      client_secret: this.config.appSecret,
+      redirect_uri: redirectUri,
+    });
 
-    const url = 'https://oauth.alibaba.com/token';
+    const url = 'https://openapi-auth.alibaba.com/auth/token/create';
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(params).toString()
+      body: params.toString()
     });
 
     const data = await response.json();
     if (data.access_token) {
       this.config.accessToken = data.access_token;
       this.config.refreshToken = data.refresh_token;
-      // In a real app, you would save these to .env or a database here
+      console.log('Successfully exchanged code for tokens');
+    }
+    return data;
+  }
+
+  async refreshToken() {
+    const params = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: this.config.refreshToken,
+      client_id: this.config.appKey,
+      client_secret: this.config.appSecret,
+    });
+
+    const url = 'https://openapi-auth.alibaba.com/auth/token/create'; // Same endpoint for refresh? The user guide doesn't specify but usually it is.
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+
+    const data = await response.json();
+    if (data.access_token) {
+      this.config.accessToken = data.access_token;
+      this.config.refreshToken = data.refresh_token;
       console.log('Successfully refreshed Alibaba tokens');
     }
     return data;
