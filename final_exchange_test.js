@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 
 const appKey = '502296';
 const appSecret = 'vwTUfjBmG7MLdyjsZnOC9pfJsy9hGo1V';
-const code = '3_502296_R9TZtH18IXhexXsHDmyDjQJ221';
+const code = '3_502296_OfWcBP8M10TJXDF8SvbepCjS44';
 
 function sign(apiName, params, secret) {
     const sortedKeys = Object.keys(params).sort();

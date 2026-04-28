@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Alibaba IOP Signature Verification</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; }
+        .box { background: #2d2d2d; border: 1px solid #404040; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        h2 { color: #569cd6; margin-top: 0; }
+        .success { color: #4CAF50; }
+        .error { color: #F44336; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+        button { background: #007acc; color: white; border: none; padding: 10px 20px; cursor: pointer; }
+        button:hover { background: #005999; }
+        input { background: #3c3c3c; color: white; border: 1px solid #555; padding: 5px; width: 300px; }
+    </style>
+</head>
+<body>
+    <h1>Alibaba IOP Gateway - Signature Verification Report</h1>
+    <p>This tool generates a technical report to verify the HMAC-SHA256 signing logic for the <code>api.taobao.global</code> gateway. You can send this output to Alibaba Technical Support.</p>
+    
+    <div class="box">
+        <h2>Parameters</h2>
+        <label>Auth Code: </label><input type="text" id="authCode" value="3_502296_OfWcBP8M10TJXDF8SvbepCjS44" /><br><br>
+        <button onclick="runVerification()">Run Verification</button>
+    </div>
+
+    <div id="report" style="display:none;">
+        <div class="box">
+            <h2>1. Request Parameters (Sorted)</h2>
+            <pre id="paramsOutput"></pre>
+        </div>
+        <div class="box">
+            <h2>2. String to Sign (apiPath + sortedParams)</h2>
+            <pre id="stringToSignOutput"></pre>
+        </div>
+        <div class="box">
+            <h2>3. Generated HMAC-SHA256 Signature</h2>
+            <pre id="signatureOutput"></pre>
+        </div>
+        <div class="box">
+            <h2>4. API Request & Response</h2>
+            <p><strong>Endpoint:</strong> https://api.taobao.global/rest/auth/token/create</p>
+            <p><strong>Method:</strong> POST</p>
+            <p><strong>Headers:</strong> Content-Type: application/x-www-form-urlencoded</p>
+            <p><strong>Body:</strong> <span id="reqBodyOutput"></span></p>
+            <br>
+            <strong>Response from Alibaba:</strong>
+            <pre id="apiResponseOutput"></pre>
+        </div>
+    </div>
+
+    <script>
+        async function runVerification() {
+            document.getElementById('report').style.display = 'block';
+            document.getElementById('apiResponseOutput').innerHTML = 'Sending request...';
+
+            const appKey = '502296';
+            const appSecret = 'vwTUfjBmG7MLdyjsZnOC9pfJsy9hGo1V';
+            const code = document.getElementById('authCode').value.trim();
+            const timestamp = Date.now().toString(); // IOP expects Unix milliseconds
+            const signMethod = 'hmac-sha256';
+            const apiPath = '/auth/token/create';
+
+            const params = {
+                app_key: appKey,
+                code: code,
+                grant_type: 'authorization_code',
+                sign_method: signMethod,
+                timestamp: timestamp
+            };
+
+            // 1. Sort parameters alphabetically
+            const sortedKeys = Object.keys(params).sort();
+            let sortedParamsDisplay = '';
+            let stringToSign = apiPath;
+
+            for (const key of sortedKeys) {
+                sortedParamsDisplay += `${key} = ${params[key]}\n`;
+                stringToSign += key + params[key];
+            }
+
+            document.getElementById('paramsOutput').innerText = sortedParamsDisplay;
+            document.getElementById('stringToSignOutput').innerText = stringToSign;
+
+            // 2. Generate HMAC-SHA256 signature
+            const hash = CryptoJS.HmacSHA256(stringToSign, appSecret);
+            const signature = hash.toString(CryptoJS.enc.Hex).toUpperCase();
+            
+            document.getElementById('signatureOutput').innerText = signature;
+
+            // 3. Prepare the request
+            params.sign = signature;
+            const reqBody = new URLSearchParams(params).toString();
+            document.getElementById('reqBodyOutput').innerText = reqBody;
+
+            // 4. Send request
+            try {
+                const response = await fetch('https://api.taobao.global/rest' + apiPath, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: reqBody
+                });
+
+                const data = await response.json();
+                const formattedResponse = JSON.stringify(data, null, 4);
+                
+                let outputHtml = formattedResponse;
+                if (data.code === 'IncompleteSignature') {
+                    outputHtml = `<span class="error">Signature failed platform verification!</span>\n\n` + formattedResponse;
+                } else if (data.access_token) {
+                    outputHtml = `<span class="success">Token exchange successful!</span>\n\n` + formattedResponse;
+                }
+                
+                document.getElementById('apiResponseOutput').innerHTML = outputHtml;
+            } catch (error) {
+                document.getElementById('apiResponseOutput').innerHTML = `<span class="error">Network Error: ${error.message}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>
