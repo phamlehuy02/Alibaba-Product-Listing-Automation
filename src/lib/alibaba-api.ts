@@ -9,16 +9,22 @@ export interface AlibabaConfig {
 
 export class AlibabaAPI {
   private config: AlibabaConfig;
-  private baseUrl = 'https://api.taobao.global/rest';
+  private baseUrl = 'https://openapi-auth.alibaba.com/rest';
 
   constructor(config: AlibabaConfig) {
     this.config = config;
   }
 
+  /**
+   * IOP Signing Algorithm (verified against official Lazada IOP SDK):
+   * 1. Sort all params by key (ASCII order), exclude 'sign' and empty values
+   * 2. Concatenate: apiPath + key1 + value1 + key2 + value2 ...
+   * 3. HMAC-SHA256 with appSecret as key
+   * 4. Uppercase hex output
+   */
   private generateSign(apiPath: string, params: Record<string, string>): string {
     const sortedKeys = Object.keys(params).sort();
     
-    // IOP Signing Rule: Prepend the API path to the sorted key-value pairs
     let signStr = apiPath;
     
     for (const key of sortedKeys) {
@@ -31,20 +37,54 @@ export class AlibabaAPI {
     return hash.toString(CryptoJS.enc.Hex).toUpperCase();
   }
 
-  async addProduct(productData: any) {
-    const apiPath = '/alibaba/icbu/product/add';
-    const publicParams: Record<string, string> = {
+  /**
+   * Build the standard IOP system parameters included in every request.
+   */
+  private getSystemParams(): Record<string, string> {
+    const params: Record<string, string> = {
       app_key: this.config.appKey,
       timestamp: Date.now().toString(),
-      sign_method: 'hmac-sha256',
-      simplify: 'true',
+      sign_method: 'sha256',
       format: 'json',
     };
 
     if (this.config.accessToken) {
-      publicParams.session = this.config.accessToken;
+      params.session = this.config.accessToken;
     }
 
+    return params;
+  }
+
+  /**
+   * Execute a signed IOP API request.
+   */
+  private async execute(apiPath: string, bizParams: Record<string, string> = {}): Promise<any> {
+    const systemParams = this.getSystemParams();
+    const allParams = { ...systemParams, ...bizParams };
+    const sign = this.generateSign(apiPath, allParams);
+    
+    const body = new URLSearchParams({ ...allParams, sign }).toString();
+    const url = `${this.baseUrl}${apiPath}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body,
+    });
+
+    const data = await response.json();
+
+    // IOP error responses have a 'code' field (e.g. 'IncompleteSignature', 'InvalidSession')
+    if (data.code && data.code !== '0') {
+      const errorMsg = `Alibaba API Error [${data.code}]: ${data.message || data.msg || 'Unknown error'}`;
+      console.error(errorMsg, { request_id: data.request_id });
+      throw new Error(errorMsg);
+    }
+
+    return data;
+  }
+
+  async addProduct(productData: any) {
     const bizParams: Record<string, string> = {
       product: JSON.stringify({
         cat_id: productData.category || '100009031', // Roasted Coffee Beans
@@ -64,32 +104,18 @@ export class AlibabaAPI {
       })
     };
 
-    const allParams = { ...publicParams, ...bizParams };
-    const sign = this.generateSign(apiPath, allParams);
-    
-    const body = new URLSearchParams({ ...allParams, sign }).toString();
-    const url = `${this.baseUrl}${apiPath}`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body
-    });
-
-    return await response.json();
+    return this.execute('/alibaba/icbu/product/add', bizParams);
   }
 
   async exchangeCodeForToken(code: string, redirectUri?: string) {
     const apiPath = '/auth/token/create';
     const params: Record<string, string> = {
-      grant_type: 'authorization_code',
-      code: code,
       app_key: this.config.appKey,
+      code: code,
       timestamp: Date.now().toString(),
-      sign_method: 'hmac-sha256'
+      sign_method: 'sha256',
     };
 
-    // Note: IOP token exchange also requires a signature
     const sign = this.generateSign(apiPath, params);
     params.sign = sign;
 
@@ -101,6 +127,12 @@ export class AlibabaAPI {
     });
 
     const data = await response.json();
+
+    // Check for IOP-level errors
+    if (data.code && data.code !== '0') {
+      throw new Error(`Token exchange failed [${data.code}]: ${data.message || data.msg || 'Unknown error'}`);
+    }
+
     if (data.access_token) {
       this.config.accessToken = data.access_token;
       this.config.refreshToken = data.refresh_token;
@@ -111,13 +143,12 @@ export class AlibabaAPI {
   async refreshToken() {
     if (!this.config.refreshToken) throw new Error('No refresh token available');
 
-    const apiPath = '/auth/token/refresh'; // Verify if this is the correct IOP path
+    const apiPath = '/auth/token/refresh';
     const params: Record<string, string> = {
-      grant_type: 'refresh_token',
-      refresh_token: this.config.refreshToken,
       app_key: this.config.appKey,
+      refresh_token: this.config.refreshToken,
       timestamp: Date.now().toString(),
-      sign_method: 'hmac-sha256'
+      sign_method: 'sha256',
     };
 
     const sign = this.generateSign(apiPath, params);
@@ -131,17 +162,15 @@ export class AlibabaAPI {
     });
 
     const data = await response.json();
+
+    if (data.code && data.code !== '0') {
+      throw new Error(`Token refresh failed [${data.code}]: ${data.message || data.msg || 'Unknown error'}`);
+    }
+
     if (data.access_token) {
       this.config.accessToken = data.access_token;
       this.config.refreshToken = data.refresh_token;
     }
     return data;
   }
-
-  async uploadImage(file: File) {
-    console.log('Uploading image to Alibaba Photo Bank...', file.name);
-    // This would use /alibaba/icbu/photobank/upload
-    return { status: 'success', url: 'https://img.alicdn.com/example_image.jpg' };
-  }
 }
-

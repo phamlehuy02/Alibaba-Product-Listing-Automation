@@ -25,9 +25,9 @@ export default function RootLayout({
                 <h1 style={{ fontSize: '1.5rem', margin: 0 }}>Alibaba <span style={{ color: 'white' }}>CoffeeBot</span></h1>
               </div>
               <nav style={{ display: 'flex', gap: '24px' }}>
-                <a href="#" style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.9rem' }}>Dashboard</a>
-                <a href="#" style={{ color: 'var(--foreground)', textDecoration: 'none', fontSize: '0.9rem', opacity: 0.7 }}>Products</a>
-                <a href="#" style={{ color: 'var(--foreground)', textDecoration: 'none', fontSize: '0.9rem', opacity: 0.7 }}>Settings</a>
+                <a href="/" style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.9rem' }}>Dashboard</a>
+                <span style={{ color: 'var(--foreground)', fontSize: '0.9rem', opacity: 0.3, cursor: 'not-allowed' }}>Products</span>
+                <a href="/settings" style={{ color: 'var(--foreground)', textDecoration: 'none', fontSize: '0.9rem', opacity: 0.7 }}>Settings</a>
               </nav>
             </div>
           </header>

@@ -32,6 +32,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDone, setIsDone] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   const handleOptimize = async () => {
     setIsOptimizing(true);
@@ -49,7 +50,13 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const isFormValid = data.title.trim() !== '' && data.origin.trim() !== '' && data.price.trim() !== '';
+
   const handleSave = async () => {
+    if (!isFormValid) {
+      alert('Please fill in at least the Title, Origin, and Price fields.');
+      return;
+    }
     setIsSaving(true);
     try {
       await saveCampaignAction(data);
@@ -59,6 +66,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
       }, 2000);
     } catch (error) {
       console.error('Save failed:', error);
+      alert('Failed to save campaign. Check the console for details.');
     } finally {
       setIsSaving(false);
     }
@@ -86,7 +94,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
           >
             {isOptimizing ? 'Optimizing...' : <><Sparkles size={18} color="var(--primary)" /> AI Optimize</>}
           </button>
-          <button className="btn-primary" onClick={handleSave} disabled={isSaving || isDone}>
+          <button className="btn-primary" onClick={handleSave} disabled={isSaving || isDone || !isFormValid} style={!isFormValid && !isDone ? { opacity: 0.5, cursor: 'not-allowed' } : {}}>
             {isDone ? <><CheckCircle2 size={18} /> Campaign Started!</> : isSaving ? 'Saving...' : <><Save size={18} /> Save & Start Automation</>}
           </button>
         </div>
@@ -110,7 +118,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
             <div>
               <label>Roast Level</label>
-              <select className="input-field" style={{ appearance: 'none' }} value={data.roastLevel} onChange={(e) => setData({...data, roastLevel: e.target.value})}>
+              <select className="input-field" value={data.roastLevel} onChange={(e) => setData({...data, roastLevel: e.target.value})}>
                 <option>Light Roast</option>
                 <option>Medium Roast</option>
                 <option>Dark Roast</option>
@@ -204,12 +212,12 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
             </div>
           </div>
 
-          <div className="glass-card" style={{ background: 'rgba(42, 157, 143, 0.05)', borderColor: 'var(--success)' }}>
+          <div className="glass-card" style={{ background: isFormValid ? 'rgba(42, 157, 143, 0.05)' : 'rgba(255, 255, 255, 0.02)', borderColor: isFormValid ? 'var(--success)' : 'var(--border)' }}>
             <div style={{ display: 'flex', gap: '12px' }}>
-              <CheckCircle2 size={20} color="var(--success)" />
+              <CheckCircle2 size={20} color={isFormValid ? 'var(--success)' : 'rgba(255,255,255,0.3)'} />
               <div>
-                <h4 style={{ color: 'var(--success)', fontSize: '0.9rem' }}>Ready for Sync</h4>
-                <p style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '4px' }}>All mandatory fields for category "Roasted Coffee Beans" are filled.</p>
+                <h4 style={{ color: isFormValid ? 'var(--success)' : 'rgba(255,255,255,0.4)', fontSize: '0.9rem' }}>{isFormValid ? 'Ready for Sync' : 'Missing Required Fields'}</h4>
+                <p style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '4px' }}>{isFormValid ? 'All mandatory fields are filled. Ready to publish.' : 'Fill in Title, Origin, and Price to enable saving.'}</p>
               </div>
             </div>
           </div>

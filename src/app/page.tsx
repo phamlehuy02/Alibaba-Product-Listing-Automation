@@ -44,7 +44,7 @@ export default function Home() {
                <Settings size={18} /> Settings
             </button>
           </Link>
-          <button className="btn-primary" style={{ background: 'var(--glass)', border: '1px solid var(--border)' }}>
+          <button className="btn-primary" style={{ background: 'var(--glass)', border: '1px solid var(--border)' }} onClick={() => alert('Activity logs coming soon. Check the server console for now.')}>
              <History size={18} /> View Logs
           </button>
           <button className="btn-primary" onClick={() => setView('form')}>
@@ -60,10 +60,12 @@ export default function Home() {
             <div style={{ background: 'rgba(212, 163, 115, 0.1)', padding: '12px', borderRadius: '12px' }}>
               <Zap size={24} color="var(--primary)" />
             </div>
-            <span style={{ fontSize: '0.8rem', color: 'var(--success)' }}>Bot Active</span>
+            <span style={{ fontSize: '0.8rem', color: campaigns.filter(c => c.active).length > 0 ? 'var(--success)' : 'white', opacity: campaigns.filter(c => c.active).length > 0 ? 1 : 0.5 }}>
+              {campaigns.filter(c => c.active).length > 0 ? 'Bot Active' : 'Idle'}
+            </span>
           </div>
-          <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Automated Listings</p>
-          <h3 style={{ fontSize: '2rem', color: 'white' }}>128 <span style={{ fontSize: '1rem', opacity: 0.5 }}>this month</span></h3>
+          <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Total Campaigns</p>
+          <h3 style={{ fontSize: '2rem', color: 'white' }}>{campaigns.length}</h3>
         </div>
 
         <div className="glass-card">
@@ -71,7 +73,7 @@ export default function Home() {
             <div style={{ background: 'rgba(42, 157, 143, 0.1)', padding: '12px', borderRadius: '12px' }}>
               <Calendar size={24} color="var(--success)" />
             </div>
-            <span style={{ fontSize: '0.8rem', opacity: 0.5 }}>Next run: 9:00 AM</span>
+            <span style={{ fontSize: '0.8rem', opacity: 0.5 }}>Hourly check</span>
           </div>
           <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Active Campaigns</p>
           <h3 style={{ fontSize: '2rem', color: 'white' }}>{campaigns.filter(c => c.active).length}</h3>
@@ -82,10 +84,9 @@ export default function Home() {
             <div style={{ background: 'rgba(188, 108, 37, 0.1)', padding: '12px', borderRadius: '12px' }}>
               <Send size={24} color="var(--accent)" />
             </div>
-            <span style={{ fontSize: '0.8rem', color: 'var(--primary)' }}>94% Success</span>
           </div>
-          <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Total Publications</p>
-          <h3 style={{ fontSize: '2rem', color: 'white' }}>1,432</h3>
+          <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Paused Campaigns</p>
+          <h3 style={{ fontSize: '2rem', color: 'white' }}>{campaigns.filter(c => !c.active).length}</h3>
         </div>
       </div>
 
@@ -136,7 +137,7 @@ export default function Home() {
                         <span style={{ fontWeight: 500 }}>{item.name}</span>
                       </div>
                     </td>
-                    <td style={{ padding: '20px 0', opacity: 0.7 }}>{item.lastRun}</td>
+                    <td style={{ padding: '20px 0', opacity: 0.7 }}>{item.lastRun ? new Date(item.lastRun).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                     <td style={{ padding: '20px 0' }}>
                       <span style={{ 
                         padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem',

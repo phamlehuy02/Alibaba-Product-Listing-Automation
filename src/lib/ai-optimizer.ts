@@ -6,10 +6,28 @@ export interface OptimizationResult {
   keywords: string[];
 }
 
-const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY || '');
+const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+
+/**
+ * Generate a basic fallback when Gemini is unavailable or unconfigured.
+ */
+function getFallback(data: any): OptimizationResult {
+  return {
+    title: `Premium ${data.origin || ''} ${data.beanVariety || ''} Coffee Beans`.trim(),
+    description: `High quality ${data.roastLevel || ''} coffee from ${data.origin || ''}.`.trim(),
+    keywords: ['coffee', 'wholesale', 'roasted coffee beans'],
+  };
+}
 
 export async function optimizeProduct(data: any, variation: boolean = false): Promise<OptimizationResult> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  // Skip Gemini entirely if no API key is configured
+  if (!GEMINI_API_KEY) {
+    console.log('⏭️  Gemini API key not set — using fallback content.');
+    return getFallback(data);
+  }
+
+  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
   const prompt = `
     You are a professional B2B E-commerce expert specializing in Alibaba.com.
@@ -44,11 +62,7 @@ export async function optimizeProduct(data: any, variation: boolean = false): Pr
     throw new Error('Failed to parse AI response');
   } catch (error) {
     console.error('Gemini Optimization Error:', error);
-    // Fallback to mock if API fails
-    return {
-      title: `Premium ${data.origin} ${data.beanVariety} Coffee Beans`,
-      description: `High quality ${data.roastLevel} coffee from ${data.origin}.`,
-      keywords: ['coffee', 'wholesale']
-    };
+    // Fallback if API fails
+    return getFallback(data);
   }
 }
