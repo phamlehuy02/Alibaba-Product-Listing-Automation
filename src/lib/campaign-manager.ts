@@ -8,6 +8,8 @@ export interface Campaign {
   schedule: string;
   active: boolean;
   lastRun?: string;
+  images?: string[];
+  video_id?: string;
 }
 
 const CAMPAIGNS_FILE = path.join(process.cwd(), 'campaigns.json');

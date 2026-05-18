@@ -67,7 +67,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <h3 style={{ fontSize: '1.25rem', color: 'white' }}>Quick Connect</h3>
-            <p style={{ fontSize: '0.9rem', opacity: 0.6 }}>Click below, authorize on Alibaba, then paste the redirect URL back here.</p>
+            <p style={{ fontSize: '0.9rem', opacity: 0.6 }}>Connect once, and the system will keep you logged in automatically for months.</p>
           </div>
         </div>
 
@@ -99,7 +99,7 @@ export default function SettingsPage() {
             placeholder="Paste the full URL from your browser address bar"
             className="input-field"
           />
-          <p style={{ fontSize: '0.75rem', opacity: 0.4, marginTop: '8px' }}>After authorizing, the page won't load — that's normal. Just copy the entire URL from the address bar.</p>
+          <p style={{ fontSize: '0.75rem', opacity: 0.4, marginTop: '8px' }}>After authorizing, copy the entire URL from the address bar and paste it above. You only need to do this <strong>once</strong>.</p>
         </div>
 
         <button

@@ -10,6 +10,7 @@ export interface AlibabaConfig {
 export class AlibabaAPI {
   private config: AlibabaConfig;
   private baseUrl = 'https://openapi-auth.alibaba.com/rest';
+  private apiBaseUrl = 'https://openapi-api.alibaba.com/rest';
 
   constructor(config: AlibabaConfig) {
     this.config = config;
@@ -49,7 +50,7 @@ export class AlibabaAPI {
     };
 
     if (this.config.accessToken) {
-      params.session = this.config.accessToken;
+      params.access_token = this.config.accessToken;
     }
 
     return params;
@@ -60,15 +61,20 @@ export class AlibabaAPI {
    */
   private async execute(apiPath: string, bizParams: Record<string, string> = {}): Promise<any> {
     const systemParams = this.getSystemParams();
-    const allParams = { ...systemParams, ...bizParams };
+    
+    // GOP Protocol requires the apiPath to be passed as the 'method' parameter
+    const allParams = { ...systemParams, ...bizParams, method: apiPath };
     const sign = this.generateSign(apiPath, allParams);
     
     const body = new URLSearchParams({ ...allParams, sign }).toString();
-    const url = `${this.baseUrl}${apiPath}`;
+    const url = `${this.apiBaseUrl}${apiPath}`;
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Protocol': 'GOP'
+      },
       body: body,
     });
 
@@ -95,6 +101,9 @@ export class AlibabaAPI {
         main_image: {
           images: productData.images || []
         },
+        product_video: productData.videoId ? {
+          video_id: productData.videoId
+        } : undefined,
         sku_list: productData.sku_list || [
           {
             price: productData.price,
@@ -169,8 +178,36 @@ export class AlibabaAPI {
 
     if (data.access_token) {
       this.config.accessToken = data.access_token;
-      this.config.refreshToken = data.refresh_token;
+      this.config.refreshToken = data.refresh_token || this.config.refreshToken;
     }
     return data;
+  }
+
+  /**
+   * List images from Alibaba Photobank.
+   */
+  async listPhotobankImages(page = 1, pageSize = 20) {
+    const bizParams: Record<string, string> = {
+      current_page: page.toString(),
+      page_size: pageSize.toString(),
+    };
+
+    return this.execute('/alibaba/icbu/photobank/list', bizParams);
+  }
+
+  /**
+   * Query videos from Alibaba Video Center.
+   */
+  async queryVideos(page = 1, pageSize = 10, title?: string) {
+    const bizParams: Record<string, string> = {
+      current_page: page.toString(),
+      page_size: pageSize.toString(),
+    };
+
+    if (title) {
+      bizParams.title = title;
+    }
+
+    return this.execute('/alibaba/icbu/video.query', bizParams);
   }
 }

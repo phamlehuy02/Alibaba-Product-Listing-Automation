@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Sparkles, Save, Image as ImageIcon, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Save, Image as ImageIcon, ArrowLeft, CheckCircle2, Video, Trash2, Plus } from 'lucide-react';
 import { optimizeProduct } from '@/lib/ai-optimizer';
 import { saveCampaignAction } from '@/app/actions/campaigns';
+import MediaBrowser from './MediaBrowser';
 
 interface ProductData {
   title: string;
@@ -15,6 +16,8 @@ interface ProductData {
   description: string;
   price: string;
   moq: string;
+  images: string[];
+  videoId?: string;
 }
 
 export default function ProductForm({ onBack }: { onBack: () => void }) {
@@ -28,7 +31,10 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
     description: '',
     price: '',
     moq: '100',
+    images: [],
   });
+
+  const [isMediaBrowserOpen, setIsMediaBrowserOpen] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDone, setIsDone] = useState(false);
@@ -59,7 +65,11 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
     }
     setIsSaving(true);
     try {
-      await saveCampaignAction(data);
+      await saveCampaignAction({
+        ...data,
+        images: data.images,
+        videoId: data.videoId
+      });
       setIsDone(true);
       setTimeout(() => {
         onBack();
@@ -113,6 +123,16 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
               value={data.title}
               onChange={(e) => setData({...data, title: e.target.value})}
             />
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label>Product Category</label>
+            <select className="input-field" value={data.category} onChange={(e) => setData({...data, category: e.target.value})}>
+              <option value="100009032">Nhân xanh (Green coffee beans)</option>
+              <option value="100009033">Phin giấy (Drip bag coffee)</option>
+              <option value="100009031">Rang xay (Roasted coffee beans / Ground coffee)</option>
+            </select>
+            <p style={{ fontSize: '0.7rem', opacity: 0.5, marginTop: '4px' }}>Note: The exact Alibaba Category ID mapping may need to be updated in the system settings.</p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
@@ -197,19 +217,102 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
           </div>
 
           <div className="glass-card">
-            <h3 style={{ marginBottom: '20px', fontSize: '1.1rem' }}>Media</h3>
-            <div style={{ 
-              border: '2px dashed var(--border)', 
-              borderRadius: '12px', 
-              padding: '32px', 
-              textAlign: 'center',
-              background: 'rgba(255,255,255,0.02)',
-              cursor: 'pointer'
-            }}>
-              <ImageIcon size={32} color="var(--primary)" style={{ marginBottom: '12px', opacity: 0.6 }} />
-              <p style={{ fontSize: '0.8rem', opacity: 0.6 }}>Drag & drop images here or click to browse</p>
-              <p style={{ fontSize: '0.7rem', opacity: 0.4, marginTop: '8px' }}>Min. 1000x1000px, white background recommended</p>
+            <h3 style={{ marginBottom: '20px', fontSize: '1.1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              Media 
+              <span style={{ fontSize: '0.8rem', opacity: 0.5, fontWeight: 'normal' }}>{data.images.length}/9 Images</span>
+            </h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
+              {data.images.map((img, i) => (
+                <div key={i} style={{ aspectRatio: '1', borderRadius: '8px', overflow: 'hidden', position: 'relative', border: '1px solid var(--border)' }}>
+                  <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <button 
+                    onClick={() => setData({ ...data, images: data.images.filter((_, idx) => idx !== i) })}
+                    style={{ position: 'absolute', top: '4px', right: '4px', background: 'rgba(255,0,0,0.7)', border: 'none', borderRadius: '4px', padding: '4px', color: 'white', cursor: 'pointer' }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+              {data.images.length < 9 && (
+                <div 
+                  onClick={() => setIsMediaBrowserOpen(true)}
+                  style={{ 
+                    aspectRatio: '1', 
+                    borderRadius: '8px', 
+                    border: '1px dashed var(--border)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.02)'
+                  }}
+                >
+                  <Plus size={20} opacity={0.4} />
+                </div>
+              )}
             </div>
+
+            {data.videoId ? (
+              <div style={{ 
+                padding: '12px', 
+                background: 'rgba(255,255,255,0.05)', 
+                borderRadius: '8px', 
+                border: '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <Video size={18} color="var(--primary)" />
+                <div style={{ flex: 1, fontSize: '0.8rem' }}>
+                  <p>Video Selected</p>
+                  <p style={{ opacity: 0.4, fontSize: '0.7rem' }}>ID: {data.videoId}</p>
+                </div>
+                <button 
+                  onClick={() => setData({ ...data, videoId: undefined })}
+                  style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer' }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={() => setIsMediaBrowserOpen(true)}
+                style={{ 
+                  width: '100%', 
+                  padding: '12px', 
+                  background: 'rgba(255,255,255,0.02)', 
+                  border: '1px dashed var(--border)', 
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  color: 'rgba(255,255,255,0.6)',
+                  fontSize: '0.9rem'
+                }}
+              >
+                <Video size={18} /> Add Video
+              </button>
+            )}
+
+            <button 
+              onClick={() => setIsMediaBrowserOpen(true)}
+              style={{ 
+                width: '100%', 
+                marginTop: '16px',
+                padding: '10px', 
+                background: 'var(--glass)', 
+                border: '1px solid var(--border)', 
+                borderRadius: '8px',
+                color: 'white',
+                fontSize: '0.8rem',
+                cursor: 'pointer'
+              }}
+            >
+              Browse Alibaba Media Bank
+            </button>
           </div>
 
           <div className="glass-card" style={{ background: isFormValid ? 'rgba(42, 157, 143, 0.05)' : 'rgba(255, 255, 255, 0.02)', borderColor: isFormValid ? 'var(--success)' : 'var(--border)' }}>
@@ -223,6 +326,15 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       </div>
+
+      {isMediaBrowserOpen && (
+        <MediaBrowser 
+          onClose={() => setIsMediaBrowserOpen(false)}
+          onSelect={(images, videoId) => setData({ ...data, images, videoId })}
+          initialImages={data.images}
+          initialVideoId={data.videoId}
+        />
+      )}
     </div>
   );
 }

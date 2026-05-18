@@ -73,8 +73,9 @@ export class AutomationEngine {
       try {
         const refreshed = await api.refreshToken();
         tokens = {
+          ...tokens,
           access_token: refreshed.access_token,
-          refresh_token: refreshed.refresh_token,
+          refresh_token: refreshed.refresh_token || tokens.refresh_token,
           expires_in: refreshed.expires_in,
         };
         this.saveTokens(tokens);
@@ -108,14 +109,14 @@ export class AutomationEngine {
       console.log('🚀 Alibaba Automation Engine Started (tokens loaded)');
     }
 
-    // Check every hour for due campaigns
-    cron.schedule('0 * * * *', () => {
+    // Run daily at 9:00 AM
+    cron.schedule('0 9 * * *', () => {
       this.processCampaigns();
     });
   }
 
   static async processCampaigns() {
-    console.log('Checking campaigns for daily listing...');
+    console.log('Starting daily listing batch...');
     const campaigns = CampaignManager.getCampaigns().filter(c => c.active);
 
     if (campaigns.length === 0) {
@@ -123,19 +124,72 @@ export class AutomationEngine {
       return;
     }
 
-    for (const campaign of campaigns) {
-      const now = new Date();
-      const lastRun = campaign.lastRun ? new Date(campaign.lastRun) : null;
+    const TARGET_POSTS = 5;
+    let successfulPosts = 0;
+
+    for (let i = 0; i < TARGET_POSTS; i++) {
+      // Randomly select a campaign for this post
+      const campaign = campaigns[Math.floor(Math.random() * campaigns.length)];
       
-      // If it hasn't run today, run it
-      if (!lastRun || lastRun.toDateString() !== now.toDateString()) {
-        console.log(`Processing daily listing for: ${campaign.name}`);
-        await this.executeListing(campaign);
+      console.log(`[Post ${i + 1}/${TARGET_POSTS}] Processing variation for: ${campaign.name}`);
+      
+      const success = await this.executeListing(campaign);
+      if (success) {
+        successfulPosts++;
+      }
+
+      // 5-second delay between posts to prevent rate-limiting
+      if (i < TARGET_POSTS - 1) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
+
+    console.log(`🎉 Daily batch complete! Successfully posted ${successfulPosts} products.`);
   }
 
-  private static async executeListing(campaign: any) {
+  private static async fetchDynamicMedia(api: AlibabaAPI, keyword: string) {
+    let images: string[] = [];
+    let videoId: string | undefined;
+
+    try {
+      // 1. Fetch pool of recent images (up to 100)
+      const imgResult = await api.listPhotobankImages(1, 100);
+      const photoList = imgResult.alibaba_icbu_photobank_list_response?.photo_list?.photo || [];
+      
+      if (photoList.length > 0) {
+        // Shuffle and pick up to 6 random images
+        const shuffled = photoList.sort(() => 0.5 - Math.random());
+        images = shuffled.slice(0, 6).map((p: any) => p.url);
+      }
+    } catch (e) {
+      console.error('Error fetching dynamic images:', e);
+    }
+
+    try {
+      // 2. Search for videos matching the keyword
+      let vidResult = await api.queryVideos(1, 20, keyword);
+      let videoList = vidResult.alibaba_icbu_video_query_response?.video_list?.isv_video_dto || [];
+
+      // 3. Fallback: If no videos match keyword, fetch without keyword
+      if (videoList.length === 0) {
+        console.log(`No videos found for "${keyword}", fetching generic videos...`);
+        vidResult = await api.queryVideos(1, 20);
+        videoList = vidResult.alibaba_icbu_video_query_response?.video_list?.isv_video_dto || [];
+      }
+
+      if (videoList.length > 0) {
+        // Pick 1 random video
+        const randomVid = videoList[Math.floor(Math.random() * videoList.length)];
+        videoId = randomVid.video_id;
+      }
+    } catch (e) {
+      console.error('Error fetching dynamic video:', e);
+    }
+
+    return { images, videoId };
+  }
+
+  private static async executeListing(campaign: any): Promise<boolean> {
     try {
       // 1. Generate daily variation using AI
       const optimized = await optimizeProduct(campaign.template, true);
@@ -144,25 +198,40 @@ export class AutomationEngine {
       const api = await this.getApiClient();
       if (!api) {
         console.log(`⏭️  Skipping ${campaign.name} — no valid API client.`);
-        return;
+        return false;
       }
 
-      // 3. Post to Alibaba
+      // 3. Fetch dynamic, randomized media
+      const keyword = campaign.template.beanVariety || 'Coffee';
+      const dynamicMedia = await this.fetchDynamicMedia(api, keyword);
+
+      // Fallback to statically assigned media if dynamic fetch completely fails
+      const finalImages = dynamicMedia.images.length > 0 ? dynamicMedia.images : (campaign.images || campaign.template.images || []);
+      const finalVideoId = dynamicMedia.videoId || campaign.video_id || campaign.template.videoId;
+
+      console.log(`Injecting ${finalImages.length} images and ${finalVideoId ? '1 video' : 'no video'} for ${campaign.name}`);
+
+      // 4. Post to Alibaba
       const result = await api.addProduct({
         ...campaign.template,
         title: optimized.title,
         description: optimized.description,
-        keywords: optimized.keywords
+        keywords: optimized.keywords,
+        images: finalImages,
+        videoId: finalVideoId
       });
 
       console.log(`✅ Listing successful for ${campaign.name}:`, result.msg || 'Success');
 
-      // 4. Update campaign last run
+      // 5. Update campaign last run
       campaign.lastRun = new Date().toISOString();
       CampaignManager.saveCampaign(campaign);
 
+      return true;
+
     } catch (error) {
       console.error(`❌ Automation failed for ${campaign.name}:`, error);
+      return false;
     }
   }
 }
