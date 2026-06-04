@@ -12,3 +12,6 @@ yarn-error.log*
 .vercel
 tokens.json
 campaigns.json
+data/
+scratch/
+.idea/

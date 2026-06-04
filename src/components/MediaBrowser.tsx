@@ -96,103 +96,42 @@ export default function MediaBrowser({ onClose, onSelect, initialImages = [], in
   };
 
   return (
-    <div className="media-browser-overlay" style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.85)',
-      backdropFilter: 'blur(10px)',
-      zIndex: 1000,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px'
-    }}>
-      <div className="glass-card" style={{
-        width: '100%',
-        maxWidth: '1000px',
-        height: '80vh',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: 0,
-        overflow: 'hidden',
-        border: '1px solid var(--border)'
-      }}>
-        {/* Header */}
-        <div style={{
-          padding: '20px 30px',
-          borderBottom: '1px solid var(--border)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          background: 'rgba(255,255,255,0.02)'
-        }}>
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Media browser">
+      <div className="modal">
+        <div className="modal-header">
           <div>
-            <h3 style={{ fontSize: '1.2rem', marginBottom: '4px' }}>Alibaba Media Bank</h3>
-            <p style={{ fontSize: '0.8rem', opacity: 0.6 }}>Select assets already in your Alibaba account</p>
+            <h3 style={{ fontSize: '1.0625rem', marginBottom: 4 }}>Alibaba Media Bank</h3>
+            <p className="field-hint">Select assets from your Alibaba account</p>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', opacity: 0.5 }}>
-            <X size={24} />
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
+            <X size={22} />
           </button>
         </div>
 
-        {/* Tabs & Search */}
-        <div style={{
-          padding: '15px 30px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '20px'
-        }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
+        <div className="media-tabs" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className={`media-tab ${activeTab === 'images' ? 'media-tab--active' : ''}`}
               onClick={() => setActiveTab('images')}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '8px',
-                border: 'none',
-                background: activeTab === 'images' ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-                color: activeTab === 'images' ? 'black' : 'white',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontWeight: 600,
-                transition: 'all 0.2s'
-              }}
             >
               <ImageIcon size={18} /> Images ({selectedImages.length}/9)
             </button>
-            <button 
+            <button
+              type="button"
+              className={`media-tab ${activeTab === 'videos' ? 'media-tab--active' : ''}`}
               onClick={() => setActiveTab('videos')}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '8px',
-                border: 'none',
-                background: activeTab === 'videos' ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-                color: activeTab === 'videos' ? 'black' : 'white',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontWeight: 600,
-                transition: 'all 0.2s'
-              }}
             >
-              <Video size={18} /> Video {selectedVideoId ? '(1 Selected)' : ''}
+              <Video size={18} /> Video{selectedVideoId ? ' (1 selected)' : ''}
             </button>
           </div>
-
           {activeTab === 'videos' && (
-            <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
-              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }} />
-              <input 
-                type="text" 
-                className="input-field"
-                placeholder="Search videos..."
-                style={{ paddingLeft: '36px', height: '38px', margin: 0 }}
+            <div className="search-wrap" style={{ marginLeft: 0, maxWidth: 280 }}>
+              <Search size={16} />
+              <input
+                type="search"
+                className="input-field search-input"
+                placeholder="Search videos…"
                 value={videoSearch}
                 onChange={(e) => setVideoSearch(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && fetchVideos(1, videoSearch)}
@@ -201,149 +140,142 @@ export default function MediaBrowser({ onClose, onSelect, initialImages = [], in
           )}
         </div>
 
-        {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 30px 30px', minHeight: 0 }}>
+        <div className="modal-body">
           {loading ? (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
-              <Loader2 size={40} className="animate-spin" style={{ marginBottom: '16px' }} />
-              <p>Fetching your assets from Alibaba...</p>
+            <div className="loading-state">
+              <Loader2 size={32} className="spin" color="var(--primary)" />
+              <p>Loading assets from Alibaba…</p>
             </div>
           ) : error ? (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ff4d4d' }}>
-              <p style={{ marginBottom: '16px' }}>{error}</p>
-              <button className="btn-primary" onClick={() => activeTab === 'images' ? fetchImages(imagePage) : fetchVideos(videoPage)}>Retry</button>
+            <div className="empty-state">
+              <p className="alert__title" style={{ color: 'var(--error)' }}>
+                {error}
+              </p>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ marginTop: 16 }}
+                onClick={() =>
+                  activeTab === 'images' ? fetchImages(imagePage) : fetchVideos(videoPage)
+                }
+              >
+                Retry
+              </button>
             </div>
           ) : activeTab === 'images' ? (
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', 
-              gap: '16px' 
-            }}>
+            <div className="media-grid">
               {images.map((img, i) => (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => toggleImage(img.url)}
-                  style={{
-                    aspectRatio: '1',
-                    borderRadius: '12px',
-                    overflow: 'hidden',
-                    position: 'relative',
-                    cursor: 'pointer',
-                    border: selectedImages.includes(img.url) ? '3px solid var(--primary)' : '1px solid var(--border)',
-                    transition: 'transform 0.2s'
-                  }}
-                  className="image-card"
+                  onKeyDown={(e) => e.key === 'Enter' && toggleImage(img.url)}
+                  className={`media-thumb ${selectedImages.includes(img.url) ? 'media-thumb--selected' : ''}`}
                 >
-                  <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={img.url} alt="" />
                   {selectedImages.includes(img.url) && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '8px',
-                      right: '8px',
-                      background: 'var(--primary)',
-                      color: 'black',
-                      borderRadius: '50%',
-                      padding: '2px'
-                    }}>
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        background: 'var(--primary)',
+                        color: '#fff',
+                        borderRadius: '50%',
+                        padding: 2,
+                      }}
+                    >
                       <Check size={14} strokeWidth={3} />
                     </div>
                   )}
-                  <div style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    padding: '4px 8px',
-                    background: 'rgba(0,0,0,0.5)',
-                    fontSize: '0.6rem',
-                    opacity: 0.8
-                  }}>
-                    {img.file_name?.slice(0, 20)}
-                  </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {videos.map((vid, i) => (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => selectVideo(vid.video_id)}
+                  onKeyDown={(e) => e.key === 'Enter' && selectVideo(vid.video_id)}
+                  className="card"
                   style={{
-                    display: 'flex',
-                    gap: '16px',
-                    padding: '12px',
-                    borderRadius: '12px',
-                    background: selectedVideoId === vid.video_id ? 'rgba(var(--primary-rgb), 0.1)' : 'rgba(255,255,255,0.02)',
-                    border: selectedVideoId === vid.video_id ? '1px solid var(--primary)' : '1px solid var(--border)',
+                    padding: 12,
                     cursor: 'pointer',
-                    transition: 'all 0.2s'
+                    borderColor:
+                      selectedVideoId === vid.video_id ? 'var(--primary)' : 'var(--border)',
+                    background:
+                      selectedVideoId === vid.video_id ? 'var(--primary-soft)' : 'var(--card-bg)',
                   }}
                 >
-                  <div style={{ width: '120px', aspectRatio: '16/9', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
-                    <img src={vid.cover_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.5)', borderRadius: '50%', padding: '4px' }}>
-                      <Video size={16} />
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                    <div
+                      style={{
+                        width: 120,
+                        aspectRatio: '16/9',
+                        borderRadius: 8,
+                        overflow: 'hidden',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <img
+                        src={vid.cover_url}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
                     </div>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <h4 style={{ fontSize: '0.9rem', marginBottom: '4px' }}>{vid.title}</h4>
-                    <p style={{ fontSize: '0.7rem', opacity: 0.5 }}>ID: {vid.video_id}</p>
-                    <p style={{ fontSize: '0.7rem', opacity: 0.5 }}>Duration: {vid.duration}s</p>
-                  </div>
-                  {selectedVideoId === vid.video_id && (
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <div style={{ background: 'var(--primary)', color: 'black', borderRadius: '50%', padding: '4px' }}>
-                        <Check size={18} strokeWidth={3} />
-                      </div>
+                    <div style={{ flex: 1 }}>
+                      <h4 style={{ fontSize: '0.9rem', marginBottom: 4 }}>{vid.title}</h4>
+                      <p className="field-hint">ID: {vid.video_id}</p>
                     </div>
-                  )}
+                    {selectedVideoId === vid.video_id && (
+                      <Check size={20} color="var(--primary)" strokeWidth={2.5} />
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div style={{
-          padding: '20px 30px',
-          borderTop: '1px solid var(--border)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          background: 'rgba(255,255,255,0.02)'
-        }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
+        <div className="modal-footer">
+          <div className="pagination" style={{ margin: 0 }}>
+            <button
+              type="button"
+              className="btn-secondary"
               disabled={activeTab === 'images' ? imagePage === 1 : videoPage === 1}
-              onClick={() => activeTab === 'images' ? setImagePage(p => p - 1) : setVideoPage(p => p - 1)}
-              style={{ padding: '8px', borderRadius: '8px', border: '1px solid var(--border)', background: 'none', color: 'white', cursor: 'pointer', opacity: 0.5 }}
+              onClick={() =>
+                activeTab === 'images' ? setImagePage((p) => p - 1) : setVideoPage((p) => p - 1)
+              }
             >
-              <ChevronLeft size={20} />
+              <ChevronLeft size={18} />
             </button>
-            <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.9rem', opacity: 0.6 }}>
+            <span className="pagination__info">
               Page {activeTab === 'images' ? imagePage : videoPage}
             </span>
-            <button 
-              onClick={() => activeTab === 'images' ? setImagePage(p => p + 1) : setVideoPage(p => p + 1)}
-              style={{ padding: '8px', borderRadius: '8px', border: '1px solid var(--border)', background: 'none', color: 'white', cursor: 'pointer', opacity: 0.5 }}
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() =>
+                activeTab === 'images' ? setImagePage((p) => p + 1) : setVideoPage((p) => p + 1)
+              }
             >
-              <ChevronRight size={20} />
+              <ChevronRight size={18} />
             </button>
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn-primary" style={{ background: 'none', border: '1px solid var(--border)', color: 'white' }} onClick={onClose}>Cancel</button>
-            <button className="btn-primary" onClick={handleConfirm}>Select Media</button>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" onClick={handleConfirm}>
+              Select media
+            </button>
           </div>
         </div>
       </div>
-      
-      <style jsx>{`
-        .image-card:hover {
-          transform: scale(1.05);
-          border-color: var(--primary);
-        }
-      `}</style>
     </div>
   );
 }

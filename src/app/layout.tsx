@@ -1,39 +1,35 @@
-import './globals.css'
-import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import './globals.css';
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { Inter } from 'next/font/google';
+import AppNav from '@/components/AppNav';
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Alibaba Coffee Listing Bot | Premium Seller Tools',
-  description: 'AI-powered product listing automation for elite coffee exporters.',
-}
+  title: 'Alibaba Coffee Listing Bot',
+  description: 'Product listing automation for coffee exporters on Alibaba.com.',
+};
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className={inter.className}>
-        <div className="min-h-screen">
-          <header style={{ padding: '20px 40px', borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '40px', height: '40px', background: 'var(--primary)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>☕</div>
-                <h1 style={{ fontSize: '1.5rem', margin: 0 }}>Alibaba <span style={{ color: 'white' }}>CoffeeBot</span></h1>
+        <header className="app-header">
+          <div className="app-header__inner">
+            <Link href="/" className="app-brand">
+              <div className="app-brand__logo" aria-hidden>
+                ☕
               </div>
-              <nav style={{ display: 'flex', gap: '24px' }}>
-                <a href="/" style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.9rem' }}>Dashboard</a>
-                <span style={{ color: 'var(--foreground)', fontSize: '0.9rem', opacity: 0.3, cursor: 'not-allowed' }}>Products</span>
-                <a href="/settings" style={{ color: 'var(--foreground)', textDecoration: 'none', fontSize: '0.9rem', opacity: 0.7 }}>Settings</a>
-              </nav>
-            </div>
-          </header>
-          <main>{children}</main>
-        </div>
+              <h1 className="app-brand__title">
+                Alibaba <span>CoffeeBot</span>
+              </h1>
+            </Link>
+            <AppNav />
+          </div>
+        </header>
+        <main>{children}</main>
       </body>
     </html>
-  )
+  );
 }

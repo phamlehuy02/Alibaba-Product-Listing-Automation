@@ -1,9 +1,9 @@
-import cron from 'node-cron';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
 import { CampaignManager } from './campaign-manager';
 import { optimizeProduct } from './ai-optimizer';
 import { AlibabaAPI } from './alibaba-api';
+import { getAuthorizedApiClient } from './api-client';
 import {
   VARIETY_IDS,
   PROCESSING_TYPE_IDS,
@@ -12,134 +12,233 @@ import {
   COMPANY_CERTS,
 } from './schema-maps';
 
-const TOKENS_FILE = path.join(process.cwd(), 'data', 'token.json');
+export const LISTING_BATCH_SIZE = 5;
 
-interface StoredTokens {
-  access_token: string;
-  refresh_token: string;
-  expires_in?: number;
-  obtained_at?: string;
-}
+export type ListingAttemptFailure = {
+  campaignName: string;
+  reason: string;
+};
+
+export type ListingBatchResult = {
+  success: boolean;
+  attempted: number;
+  successful: number;
+  error?: string;
+  failures?: ListingAttemptFailure[];
+};
+
+type ListingAttemptResult = { ok: true } | { ok: false; reason: string };
+
+const SCRATCH_DIR = path.join(process.cwd(), 'scratch');
 
 export class AutomationEngine {
-  private static isRunning = false;
-
-  // ── Token management ──────────────────────────────────────────────────────
-
-  private static loadTokens(): StoredTokens | null {
-    try {
-      if (existsSync(TOKENS_FILE)) {
-        return JSON.parse(readFileSync(TOKENS_FILE, 'utf-8'));
-      }
-    } catch {}
-    return null;
+  private static getApiClient(): Promise<AlibabaAPI | null> {
+    return getAuthorizedApiClient();
   }
 
-  private static saveTokens(tokens: StoredTokens) {
-    writeFileSync(TOKENS_FILE, JSON.stringify({
-      ...tokens,
-      obtained_at: new Date().toISOString(),
-    }, null, 2), 'utf-8');
-  }
-
-  private static isTokenExpired(tokens: StoredTokens): boolean {
-    if (!tokens.obtained_at || !tokens.expires_in) return false;
-    const obtainedMs = new Date(tokens.obtained_at).getTime();
-    const expiresMs = obtainedMs + (tokens.expires_in * 1000);
-    const bufferMs = 10 * 60 * 1000;
-    return Date.now() > (expiresMs - bufferMs);
-  }
-
-  private static async getApiClient(): Promise<AlibabaAPI | null> {
-    const appKey = process.env.ALIBABA_APP_KEY || '';
-    const appSecret = process.env.ALIBABA_APP_SECRET || '';
-
-    if (!appKey || !appSecret) return null;
-
-    let tokens = this.loadTokens();
-    if (!tokens || !tokens.access_token) {
-      console.log('⚠️ No tokens found. Attempting auto-authentication...');
-      try {
-        const { performAutoAuth } = await import('./auto-auth');
-        const tokenData = await performAutoAuth(appKey, appSecret);
-        if (tokenData && tokenData.access_token) {
-          tokens = { access_token: tokenData.access_token, refresh_token: tokenData.refresh_token, expires_in: tokenData.expires_in };
-          this.saveTokens(tokens);
-          console.log('✅ Auto-authentication successful.');
-        } else return null;
-      } catch (err) {
-        console.error('❌ Auto-authentication failed:', err);
-        return null;
-      }
+  /** Post up to LISTING_BATCH_SIZE new listings from random active campaigns. */
+  static async runListingBatch(): Promise<ListingBatchResult> {
+    if (!process.env.ALIBABA_APP_KEY || !process.env.ALIBABA_APP_SECRET) {
+      return {
+        success: false,
+        attempted: 0,
+        successful: 0,
+        error: 'Alibaba API credentials are not configured.',
+      };
     }
 
-    const api = new AlibabaAPI({ appKey, appSecret, accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+    const api = await this.getApiClient();
+    if (!api) {
+      return {
+        success: false,
+        attempted: 0,
+        successful: 0,
+        error: 'Not connected to Alibaba. Complete OAuth on the Settings page.',
+      };
+    }
 
-    if (this.isTokenExpired(tokens)) {
-      console.log('🔄 Access token expired — refreshing...');
-      try {
-        const refreshed = await api.refreshToken();
-        tokens = { ...tokens, access_token: refreshed.access_token, refresh_token: refreshed.refresh_token || tokens.refresh_token, expires_in: refreshed.expires_in };
-        this.saveTokens(tokens);
-        console.log('✅ Token refreshed successfully.');
-      } catch {
-        console.error('❌ Token refresh failed. Attempting auto-authentication...');
-        try {
-          const { performAutoAuth } = await import('./auto-auth');
-          const tokenData = await performAutoAuth(appKey, appSecret);
-          if (tokenData && tokenData.access_token) {
-            tokens = { ...tokens, access_token: tokenData.access_token, refresh_token: tokenData.refresh_token, expires_in: tokenData.expires_in };
-            this.saveTokens(tokens);
-            console.log('✅ Auto-authentication successful.');
-          } else return null;
-        } catch (err) {
-          console.error('❌ Auto-authentication failed after token expiry:', err);
-          return null;
+    const campaigns = CampaignManager.getCampaigns().filter((c) => c.active);
+    if (campaigns.length === 0) {
+      return {
+        success: false,
+        attempted: 0,
+        successful: 0,
+        error: 'No active products. Load products from Alibaba or create a campaign first.',
+      };
+    }
+
+    console.log(`Starting listing batch (${LISTING_BATCH_SIZE} posts)…`);
+    let successfulPosts = 0;
+    const failures: ListingAttemptFailure[] = [];
+
+    for (let i = 0; i < LISTING_BATCH_SIZE; i++) {
+      const campaign = campaigns[Math.floor(Math.random() * campaigns.length)];
+      console.log(`[Post ${i + 1}/${LISTING_BATCH_SIZE}] Processing: ${campaign.name}`);
+      const attempt = await this.executeListing(campaign);
+      if (attempt.ok) {
+        successfulPosts++;
+      } else {
+        failures.push({ campaignName: campaign.name, reason: attempt.reason });
+      }
+      if (i < LISTING_BATCH_SIZE - 1) await new Promise((r) => setTimeout(r, 5000));
+    }
+
+    console.log(`Listing batch complete. Posted ${successfulPosts}/${LISTING_BATCH_SIZE}.`);
+    const summaryError =
+      successfulPosts === 0 && failures.length > 0
+        ? failures
+            .slice(0, 3)
+            .map((f) => `${f.campaignName}: ${f.reason}`)
+            .join(' · ')
+        : successfulPosts === 0
+          ? 'No listings were posted.'
+          : undefined;
+
+    return {
+      success: successfulPosts > 0,
+      attempted: LISTING_BATCH_SIZE,
+      successful: successfulPosts,
+      failures: failures.length > 0 ? failures : undefined,
+      error: summaryError,
+    };
+  }
+
+  private static sanitizeKeyword(keyword: string): string {
+    return keyword
+      .replace(/[;:,,<>]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 120);
+  }
+
+  /** Tiered price + price mode — required for schema publish when ladderPrice is empty. */
+  private static injectWholesalePricing(xml: string, campaign: any, pDetails: any): string {
+    const template = campaign.template || {};
+    const trade = pDetails?.wholesaleTrade || {};
+
+    xml = this.injectXmlField(xml, 'scPrice', '1');
+    xml = this.injectXmlField(xml, 'marketPrice', '1');
+
+    const moqForMarket = String(template.moq ?? '100').replace(/[^\d.]/g, '') || '100';
+    xml = this.injectXmlField(xml, 'marketMinOrderQuantity', moqForMarket);
+
+    const tiers: Array<{ quantity: string; price: string }> = [];
+    const ranges = trade.priceRanges || trade.ladderPrices || trade.price_range_list;
+    if (Array.isArray(ranges) && ranges.length > 0) {
+      for (const r of ranges.slice(0, 4)) {
+        const qty = r.minQuantity ?? r.quantity ?? r.min_qty ?? r.startQuantity;
+        const price = r.price ?? r.unitPrice ?? r.unit_price;
+        if (qty != null && price != null) {
+          tiers.push({
+            quantity: String(Math.round(Number(qty))),
+            price: Number(price).toFixed(2),
+          });
         }
       }
     }
 
-    return api;
+    if (tiers.length === 0) {
+      const sku = pDetails?.sku_info?.sku_list?.[0] || pDetails?.skuList?.[0];
+      const moqRaw = String(
+        template.moq ?? sku?.moq ?? trade.minOrderQuantity ?? trade.min_order_quantity ?? '100'
+      );
+      const moq = moqRaw.replace(/[^\d.]/g, '') || '100';
+      const priceRaw = template.price ?? sku?.price ?? trade.price ?? trade.minPrice ?? '10';
+      const price = Number(String(priceRaw).replace(/[^\d.]/g, '') || '10').toFixed(2);
+      tiers.push({ quantity: moq, price });
+      const moqNum = Number(moq) || 100;
+      const priceNum = Number(price) || 10;
+      tiers.push({
+        quantity: String(moqNum * 10),
+        price: (priceNum * 0.95).toFixed(2),
+      });
+      tiers.push({
+        quantity: String(moqNum * 50),
+        price: (priceNum * 0.9).toFixed(2),
+      });
+      tiers.push({
+        quantity: String(moqNum * 100),
+        price: (priceNum * 0.85).toFixed(2),
+      });
+    }
+
+    tiers.slice(0, 4).forEach((tier, idx) => {
+      xml = this.injectComplexSubField(xml, `ladderPrice_${idx}`, tier);
+      console.log(`  ✓ [ladderPrice_${idx}] = qty≥${tier.quantity}, $${tier.price}`);
+    });
+
+    return xml;
   }
 
-  // ── Scheduler ─────────────────────────────────────────────────────────────
-
-  static init() {
-    if (this.isRunning) return;
-    this.isRunning = true;
-
-    if (!process.env.ALIBABA_APP_KEY || !process.env.ALIBABA_APP_SECRET) {
-      console.log('⚠️  Automation Engine: Alibaba credentials not configured. Cron scheduler paused.');
-      return;
+  private static writeDebugPayload(filename: string, contents: string) {
+    try {
+      mkdirSync(SCRATCH_DIR, { recursive: true });
+      writeFileSync(path.join(SCRATCH_DIR, filename), contents, 'utf-8');
+    } catch (e) {
+      console.warn(`Could not write debug payload ${filename}:`, e);
     }
-
-    const tokens = this.loadTokens();
-    if (!tokens?.access_token) {
-      console.log('⚠️  Automation Engine: No access token found. Complete OAuth on the Settings page.');
-    } else {
-      console.log('🚀 Alibaba Automation Engine Started (tokens loaded)');
-    }
-
-    cron.schedule('0 9 * * *', () => { this.processCampaigns(); });
   }
 
-  static async processCampaigns() {
-    console.log('Starting daily listing batch...');
-    const campaigns = CampaignManager.getCampaigns().filter(c => c.active);
+  private static removeFieldById(xml: string, fieldId: string): string {
+    const openRegex = new RegExp(`<field\\s+id="${fieldId}"(\\s[^>]*>|>)`);
+    const openMatch = openRegex.exec(xml);
+    if (!openMatch) return xml;
 
-    if (campaigns.length === 0) { console.log('  No active campaigns.'); return; }
+    const blockStart = openMatch.index;
+    let pos = blockStart + openMatch[0].length;
+    let depth = 1;
 
-    const TARGET_POSTS = 5;
-    let successfulPosts = 0;
+    while (pos < xml.length && depth > 0) {
+      const nextOpen = xml.indexOf('<field', pos);
+      const nextClose = xml.indexOf('</field>', pos);
+      if (nextClose === -1) break;
 
-    for (let i = 0; i < TARGET_POSTS; i++) {
-      const campaign = campaigns[Math.floor(Math.random() * campaigns.length)];
-      console.log(`[Post ${i + 1}/${TARGET_POSTS}] Processing variation for: ${campaign.name}`);
-      if (await this.executeListing(campaign)) successfulPosts++;
-      if (i < TARGET_POSTS - 1) await new Promise(r => setTimeout(r, 5000));
+      const charAfter = nextOpen !== -1 ? xml[nextOpen + 6] : '';
+      const isFieldOpen =
+        nextOpen !== -1 && nextOpen < nextClose && (charAfter === ' ' || charAfter === '>');
+
+      if (isFieldOpen) {
+        depth++;
+        pos = nextOpen + 1;
+      } else if (nextOpen !== -1 && nextOpen < nextClose) {
+        // Skip `<fields>` false positives (prefix match on `<field`).
+        pos = nextOpen + 1;
+      } else {
+        depth--;
+        if (depth === 0) {
+          return xml.substring(0, blockStart) + xml.substring(nextClose + '</field>'.length);
+        }
+        pos = nextClose + 1;
+      }
     }
 
-    console.log(`🎉 Daily batch complete! Successfully posted ${successfulPosts} products.`);
+    return xml;
+  }
+
+  /**
+   * Schema GET returns &lt;fields&gt; for complex types; schema ADD expects &lt;complex-value&gt;
+   * (see Alibaba ICBU publish demo XML).
+   */
+  private static prepareSchemaForPublish(xml: string, catId: string | number): string {
+    let out = xml
+      .replace(/<field id="infos"[\s\S]*?<\/field>/g, '')
+      .replace(/<label-group[\s\S]*?<\/label-group>/g, '')
+      .replace(/<rules>[\s\S]*?<\/rules>/g, '')
+      .replace(/<options>[\s\S]*?<\/options>/g, '')
+    out = this.removeFieldById(out, 'customizedServices');
+    out = this.removeFieldById(out, 'customMoreProperty');
+    out = this.removeFieldById(out, 'paymentMethod');
+    // Schema templates sometimes embed raw newlines inside quoted attributes.
+    out = out.replace(/="([^"]*)\n([^"]*)"/g, '="$1 $2"');
+
+    const innermostFields = /<fields>((?:(?!<fields>)[\s\S])*?)<\/fields>/;
+    for (let i = 0; i < 128; i++) {
+      if (!innermostFields.test(out)) break;
+      out = out.replace(innermostFields, '<complex-value>$1</complex-value>');
+    }
+
+    out = this.injectXmlField(out, 'catId', String(catId));
+    return out;
   }
 
   // ── XML Injection Helpers ─────────────────────────────────────────────────
@@ -502,7 +601,7 @@ export class AutomationEngine {
 
   // ── Core Listing Flow ─────────────────────────────────────────────────────
 
-  private static async executeListing(campaign: any): Promise<boolean> {
+  private static async executeListing(campaign: any): Promise<ListingAttemptResult> {
     try {
       // 1. Generate AI-optimized content variation
       const optimized = await optimizeProduct(campaign.template, true);
@@ -511,7 +610,7 @@ export class AutomationEngine {
       const api = await this.getApiClient();
       if (!api) {
         console.log(`⏭️  Skipping ${campaign.name} — no valid API client.`);
-        return false;
+        return { ok: false, reason: 'Not connected to Alibaba' };
       }
 
       // 3. Resolve media (images + video)
@@ -563,7 +662,7 @@ export class AutomationEngine {
 
       if (!baseProductId) {
         console.error(`❌ Skipping ${campaign.name} — no base product found.`);
-        return false;
+        return { ok: false, reason: 'No base product to clone' };
       }
 
       console.log(`🔁 Cloning base schema ID: ${baseProductId} (Category: ${baseProductCatId})`);
@@ -573,19 +672,20 @@ export class AutomationEngine {
         baseXml = await api.getProductSchema(baseProductId, String(baseProductCatId));
         if (!baseXml) throw new Error('Empty schema returned');
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
         console.error(`❌ Failed to get base schema for ${baseProductId}`, e);
-        return false;
+        return { ok: false, reason: `Could not load product schema: ${msg}` };
       }
 
-      // Fetch actual product details to retrieve missing fields like images, keywords, and prices
       try {
-        const detailRes = await (api as any).execute('/icbu/product/get', {
-          product_get_request: JSON.stringify({ productId: Number(baseProductId) })
-        });
-        pDetails = detailRes.product || detailRes.result?.product || detailRes.result || {};
-        console.log(`✅ Retrieved base product details from API.`);
+        const detailRes = await api.getProduct(baseProductId);
+        pDetails =
+          detailRes?.alibaba_icbu_product_get_response?.product ||
+          detailRes?.result?.product ||
+          {};
+        console.log(`✅ Retrieved base product details.`);
       } catch (e: any) {
-        console.warn(`⚠️ Failed to retrieve base product details: ${e.message}. Using default fallbacks.`);
+        console.warn(`⚠️ Failed to retrieve base product details: ${e.message}. Using template fallbacks.`);
       }
 
       // ── 5. Inject content into schema XML ────────────────────────────────
@@ -667,6 +767,9 @@ export class AutomationEngine {
       console.log('📋 Injecting structured attributes:');
       baseXml = this.injectStructuredAttributes(baseXml, campaign);
 
+      console.log('📋 Injecting wholesale pricing:');
+      baseXml = this.injectWholesalePricing(baseXml, campaign, pDetails);
+
       // 5e. Inject required core fields that are omitted by getProductSchema()
       console.log('📋 Injecting core trade & media fields:');
       
@@ -718,40 +821,59 @@ export class AutomationEngine {
         keywordsList = defaultKeywords;
       }
       for (let idx = 0; idx < 3; idx++) {
-        const kw = keywordsList[idx] || defaultKeywords[idx] || 'Coffee Beans';
+        const kw = this.sanitizeKeyword(
+          keywordsList[idx] || defaultKeywords[idx] || 'Coffee Beans'
+        );
         baseXml = this.injectXmlField(baseXml, `productKeywords_${idx}`, kw);
         console.log(`  ✓ [productKeywords_${idx}] = "${kw}"`);
       }
 
-      // 5e-3. Ladder Period (Shipping/lead times)
+      // 5e-3. Ladder Period (Shipping/lead times) — fill up to 3 tiers
       const periods = pDetails.wholesaleTrade?.deliverPeriods || [];
+      const periodTiers: Array<{ quantity: string; day: string }> = [];
       if (Array.isArray(periods) && periods.length > 0) {
-        periods.slice(0, 3).forEach((period: any, idx: number) => {
-          baseXml = this.injectComplexSubField(baseXml, `ladderPeriod_${idx}`, {
+        for (const period of periods.slice(0, 3)) {
+          periodTiers.push({
             quantity: String(period.quantity || '10000'),
             day: String(period.processPeriod || period.day || '15'),
           });
-          console.log(`  ✓ [ladderPeriod_${idx}] = qty:${period.quantity || '10000'}, days:${period.processPeriod || '15'}`);
-        });
-      } else {
-        baseXml = this.injectComplexSubField(baseXml, 'ladderPeriod_0', {
-          quantity: '10000',
-          day: '15',
-        });
-        console.log(`  ✓ [ladderPeriod_0] = qty:10000, days:15 (default fallback)`);
+        }
       }
+      while (periodTiers.length < 2) {
+        const last = periodTiers[periodTiers.length - 1];
+        periodTiers.push(
+          last
+            ? {
+                quantity: String(Number(last.quantity) * 2 || 20000),
+                day: String(Number(last.day) + 5 || 20),
+              }
+            : { quantity: '10000', day: '15' }
+        );
+      }
+      while (periodTiers.length < 3) {
+        const last = periodTiers[periodTiers.length - 1];
+        periodTiers.push({
+          quantity: String(Number(last.quantity) * 5 || 50000),
+          day: String(Number(last.day) + 10 || 25),
+        });
+      }
+      periodTiers.slice(0, 3).forEach((period, idx) => {
+        baseXml = this.injectComplexSubField(baseXml, `ladderPeriod_${idx}`, period);
+        console.log(`  ✓ [ladderPeriod_${idx}] = qty:${period.quantity}, days:${period.day}`);
+      });
 
-      // Save the payload for debugging
-      writeFileSync(path.join(process.cwd(), 'scratch', 'post-payload.xml'), baseXml, 'utf-8');
+      this.writeDebugPayload('post-payload-raw.xml', baseXml);
+      const publishXml = this.prepareSchemaForPublish(baseXml, baseProductCatId);
+      this.writeDebugPayload('post-payload.xml', publishXml);
 
       // ── 6. POST to Alibaba ────────────────────────────────────────────────
-      const result = await api.addProductSchema(Number(baseProductCatId), baseXml);
+      const result = await api.addProductSchema(Number(baseProductCatId), publishXml);
 
       if (result?.result?.success === false) {
         const errCode = result.result.msg_code || 'UNKNOWN';
-        const errMsg = (result.result.message_info || '').substring(0, 200);
+        const errMsg = (result.result.message_info || result.result.message || '').substring(0, 200);
         console.error(`❌ Listing FAILED for ${campaign.name}. API error [${errCode}]: ${errMsg}`);
-        return false;
+        return { ok: false, reason: `Alibaba API [${errCode}]: ${errMsg || 'Unknown error'}` };
       }
 
       const productId =
@@ -759,15 +881,23 @@ export class AutomationEngine {
         result?.result?.product_id ||
         result?.data ||
         result?.alibaba_icbu_product_schema_add_response?.product_id;
+
+      if (!productId && result?.result?.success !== true) {
+        const hint = JSON.stringify(result).substring(0, 180);
+        console.error(`❌ Listing response unclear for ${campaign.name}:`, hint);
+        return { ok: false, reason: 'Alibaba did not return a product ID' };
+      }
+
       console.log(`✅ Listing successful for ${campaign.name}. Product ID: ${productId}`);
 
       campaign.lastRun = new Date().toISOString();
       CampaignManager.saveCampaign(campaign);
-      return true;
+      return { ok: true };
 
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       console.error(`❌ Automation failed for ${campaign.name}:`, error);
-      return false;
+      return { ok: false, reason: msg };
     }
   }
 }

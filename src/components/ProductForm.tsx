@@ -165,36 +165,53 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: '1000px', margin: '0 auto', padding: '40px' }}>
-      <button 
-        onClick={onBack}
-        style={{ background: 'none', border: 'none', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '24px' }}
-      >
-        <ArrowLeft size={18} /> Back to Dashboard
+    <div className="page" style={{ maxWidth: 1000 }}>
+      <button type="button" onClick={onBack} className="back-link">
+        <ArrowLeft size={18} /> Back to dashboard
       </button>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
+      <header className="page-header">
         <div>
-          <h2 style={{ fontSize: '2rem', color: 'white' }}>List Your <span style={{ color: 'var(--primary)' }}>Coffee</span></h2>
-          <p style={{ opacity: 0.6 }}>Fill in the details to publish your product to Alibaba.</p>
+          <p className="eyebrow">New listing</p>
+          <h2 className="page-title">
+            List your <span className="highlight">coffee</span>
+          </h2>
+          <p className="page-description">Fill in the details to create a new automation campaign.</p>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button 
-            className="btn-primary" 
-            style={{ background: 'var(--glass)', border: '1px solid var(--border)', color: 'white' }}
-            onClick={handleOptimize}
+        <div className="page-header__actions">
+          <button type="button" className="btn-secondary" onClick={handleOptimize}>
+            {isOptimizing ? (
+              'Optimizing…'
+            ) : (
+              <>
+                <Sparkles size={18} /> AI optimize
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleSave}
+            disabled={isSaving || isDone || !isFormValid}
           >
-            {isOptimizing ? 'Optimizing...' : <><Sparkles size={18} color="var(--primary)" /> AI Optimize</>}
-          </button>
-          <button className="btn-primary" onClick={handleSave} disabled={isSaving || isDone || !isFormValid} style={!isFormValid && !isDone ? { opacity: 0.5, cursor: 'not-allowed' } : {}}>
-            {isDone ? <><CheckCircle2 size={18} /> Campaign Started!</> : isSaving ? 'Saving...' : <><Save size={18} /> Save & Start Automation</>}
+            {isDone ? (
+              <>
+                <CheckCircle2 size={18} /> Campaign started
+              </>
+            ) : isSaving ? (
+              'Saving…'
+            ) : (
+              <>
+                <Save size={18} /> Save campaign
+              </>
+            )}
           </button>
         </div>
-      </div>
+      </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '32px' }}>
-        <div className="glass-card">
-          <h3 style={{ marginBottom: '24px', fontSize: '1.2rem' }}>Basic Information</h3>
+      <div className="form-layout">
+        <div className="card">
+          <h3 className="form-section-title">Basic information</h3>
           
           <div style={{ marginBottom: '20px' }}>
             <label>Product Subject / Title</label>
@@ -314,7 +331,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
         </div>
 
         {/* ── Product Specifications Card ─────────────────────────── */}
-        <div className="glass-card" style={{ gridColumn: '1 / -1' }}>
+        <div className="card" style={{ gridColumn: '1 / -1' }}>
           <h3 style={{ marginBottom: '24px', fontSize: '1.2rem' }}>Product Specifications</h3>
 
           {/* Certifications */}
@@ -492,7 +509,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-          <div className="glass-card">
+          <div className="card">
             <h3 style={{ marginBottom: '20px', fontSize: '1.1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               Pricing & MOQ
               <button
@@ -594,7 +611,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
             </div>
           </div>
 
-          <div className="glass-card">
+          <div className="card">
             <h3 style={{ marginBottom: '20px', fontSize: '1.1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               Media 
               <span style={{ fontSize: '0.8rem', opacity: 0.5, fontWeight: 'normal' }}>{data.images.length}/9 Images</span>
@@ -623,7 +640,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
                     alignItems: 'center', 
                     justifyContent: 'center',
                     cursor: 'pointer',
-                    background: 'rgba(255,255,255,0.02)'
+                    background: 'var(--background)'
                   }}
                 >
                   <Plus size={20} opacity={0.4} />
@@ -634,7 +651,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
             {data.videoId ? (
               <div style={{ 
                 padding: '12px', 
-                background: 'rgba(255,255,255,0.05)', 
+                background: 'var(--background)', 
                 borderRadius: '8px', 
                 border: '1px solid var(--border)',
                 display: 'flex',
@@ -667,7 +684,7 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
                   justifyContent: 'center',
                   gap: '8px',
                   cursor: 'pointer',
-                  color: 'rgba(255,255,255,0.6)',
+                  color: 'var(--foreground-muted)',
                   fontSize: '0.9rem'
                 }}
               >
@@ -675,30 +692,34 @@ export default function ProductForm({ onBack }: { onBack: () => void }) {
               </button>
             )}
 
-            <button 
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ width: '100%', marginTop: 16 }}
               onClick={() => setIsMediaBrowserOpen(true)}
-              style={{ 
-                width: '100%', 
-                marginTop: '16px',
-                padding: '10px', 
-                background: 'var(--glass)', 
-                border: '1px solid var(--border)', 
-                borderRadius: '8px',
-                color: 'white',
-                fontSize: '0.8rem',
-                cursor: 'pointer'
-              }}
             >
               Browse Alibaba Media Bank
             </button>
           </div>
 
-          <div className="glass-card" style={{ background: isFormValid ? 'rgba(42, 157, 143, 0.05)' : 'rgba(255, 255, 255, 0.02)', borderColor: isFormValid ? 'var(--success)' : 'var(--border)' }}>
+          <div
+            className="card"
+            style={{
+              background: isFormValid ? 'var(--success-soft)' : 'var(--background)',
+              borderColor: isFormValid ? 'var(--success)' : 'var(--border)',
+            }}
+          >
             <div style={{ display: 'flex', gap: '12px' }}>
-              <CheckCircle2 size={20} color={isFormValid ? 'var(--success)' : 'rgba(255,255,255,0.3)'} />
+              <CheckCircle2 size={20} color={isFormValid ? 'var(--success)' : 'var(--foreground-subtle)'} />
               <div>
-                <h4 style={{ color: isFormValid ? 'var(--success)' : 'rgba(255,255,255,0.4)', fontSize: '0.9rem' }}>{isFormValid ? 'Ready for Sync' : 'Missing Required Fields'}</h4>
-                <p style={{ fontSize: '0.8rem', opacity: 0.7, marginTop: '4px' }}>{isFormValid ? 'All mandatory fields are filled. Ready to publish.' : 'Fill in Title, Origin, and Price to enable saving.'}</p>
+                <h4 style={{ color: isFormValid ? 'var(--success)' : 'var(--foreground-muted)', fontSize: '0.9rem' }}>
+                  {isFormValid ? 'Ready to save' : 'Missing required fields'}
+                </h4>
+                <p className="field-hint" style={{ marginTop: 4 }}>
+                  {isFormValid
+                    ? 'All mandatory fields are filled.'
+                    : 'Fill in title, origin, and price to enable saving.'}
+                </p>
               </div>
             </div>
           </div>

@@ -266,11 +266,27 @@ export class AlibabaAPI {
   /**
    * List products from Alibaba.
    */
-  async listProducts(page = 1, pageSize = 10) {
+  async listProducts(
+    page = 1,
+    pageSize = 30,
+    options?: {
+      language?: string;
+      gmtModifiedFrom?: string;
+      gmtModifiedTo?: string;
+    }
+  ) {
     const bizParams: Record<string, string> = {
       current_page: page.toString(),
-      page_size: pageSize.toString(),
+      page_size: Math.min(pageSize, 30).toString(),
+      language: options?.language ?? 'ENGLISH',
     };
+
+    if (options?.gmtModifiedFrom) {
+      bizParams.gmt_modified_from = options.gmtModifiedFrom;
+    }
+    if (options?.gmtModifiedTo) {
+      bizParams.gmt_modified_to = options.gmtModifiedTo;
+    }
 
     return this.execute('/alibaba/icbu/product/list', bizParams);
   }
