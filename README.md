@@ -1,6 +1,9 @@
 # ☕ Alibaba Coffee Listing Bot
 
-Dashboard tự động đăng sản phẩm lên Alibaba.com dành cho nhà xuất khẩu cà phê. Nhập thông tin sản phẩm, bot sẽ đăng lên tài khoản Alibaba của bạn qua API chính thức.
+Dashboard để kết nối tài khoản Alibaba.com, tải danh sách sản phẩm hiện có, và đăng **listing mới** qua API chính thức.
+
+> **Chỉ dùng 3 bước trong README này:** (1) Xác thực → (2) Load from Alibaba → (3) Post listings.  
+> **Không dùng** các tính năng khác trên giao diện (New campaign, AI Optimize, v.v.) — chúng không nằm trong quy trình hỗ trợ và có thể gây dữ liệu không mong muốn.
 
 ---
 
@@ -15,159 +18,146 @@ Dashboard tự động đăng sản phẩm lên Alibaba.com dành cho nhà xuấ
 
 ---
 
-## Hướng Dẫn Cài Đặt (Từng Bước)
+## Cài Đặt & Khởi Chạy
 
 ### Bước 1: Cài đặt dự án
 
-Mở terminal (Command Prompt trên Windows, Terminal trên Mac) và điều hướng đến thư mục dự án. Sau đó chạy:
-
-```
+```bash
 npm install
 ```
 
-Lệnh này tải tất cả các gói cần thiết. Có thể mất 1–2 phút.
+### Bước 2: Cấu hình `.env.local`
 
-### Bước 2: Nhập thông tin đăng nhập
+Tạo hoặc mở file **`.env.local`** ở thư mục gốc:
 
-Mở file **`.env.local`** trong thư mục gốc của dự án (dùng Notepad, VS Code, hoặc trình soạn thảo bất kỳ).
-
-Thay các giá trị mẫu bằng thông tin thật của bạn:
-
-```
+```env
 ALIBABA_APP_KEY=app_key_của_bạn
 ALIBABA_APP_SECRET=app_secret_của_bạn
 NEXT_PUBLIC_ALIBABA_APP_KEY=app_key_của_bạn
+
+# Tùy chọn: số sản phẩm tải về khi bấm "Load from Alibaba" (mặc định 100)
+SYNC_PRODUCT_LIMIT=100
 ```
 
-**Lưu file.** Giữ nguyên các dòng khác.
+> ⚠️ **Không chia sẻ App Secret.** Không commit `.env.local`, `tokens.json`, hoặc `campaigns.json`.
 
-> ⚠️ **Không bao giờ chia sẻ App Secret với bất kỳ ai.** Nó giống như mật khẩu tài khoản Alibaba của bạn.
+### Bước 3: Chạy dashboard
 
-### Bước 3: Khởi chạy dashboard
-
-Chạy lệnh sau trong terminal:
-
-```
+```bash
 npm run dev
 ```
 
-Bạn sẽ thấy kết quả như sau:
-
-```
-▲ Next.js 16.x.x
-- Local: http://localhost:3000
-✓ Ready
-```
-
-### Bước 4: Mở dashboard
-
-Mở trình duyệt (Chrome, Edge, Firefox) và truy cập:
-
-```
-http://localhost:3000
-```
-
-Bạn sẽ thấy **Alibaba Bot Dashboard** với danh sách campaign.
-
-### Bước 5: Kết nối tài khoản Alibaba
-
-Đây là bước thực hiện **một lần duy nhất** để cho phép bot truy cập tài khoản Alibaba của bạn.
-
-1. Trên dashboard, nhấn **"Settings"** (hoặc truy cập `http://localhost:3000/settings`)
-2. Nhấn nút **"Open Alibaba Authorization"** — trang Alibaba sẽ mở trong tab mới
-3. Đăng nhập và nhấn **"Authorize"** để cấp quyền
-4. Sau khi xác nhận, trình duyệt sẽ chuyển đến một trang không tải được — **đó là bình thường**
-5. **Sao chép toàn bộ URL** trên thanh địa chỉ trình duyệt (ví dụ: `https://example.com/callback?code=3_502296_AbCdEf...`)
-6. Quay lại trang Settings, **dán URL vào ô "Paste the redirect URL here"** — mã sẽ được trích xuất tự động
-7. Nhấn **"Connect"**
-8. Bạn sẽ thấy thông báo xanh **"Successfully Authenticated"**
-
-✅ **Xong!** Bot đã kết nối. Token được lưu tự động và sẽ tự làm mới khi hết hạn.
-
-> **Nếu kết nối tự động không hoạt động**, bạn có thể dùng phần "Manual Token Exchange" phía dưới để nhập mã thủ công.
+Mở trình duyệt: **http://localhost:3000**
 
 ---
 
-## Cách Sử Dụng
+## Quy Trình Sử Dụng (3 Bước)
 
-### Tạo Campaign Mới
+### ⚠️ Chỉ dùng các bước dưới đây
 
-1. Trên dashboard, nhấn **"+ New Campaign"**
-2. Điền thông tin sản phẩm cà phê:
-   - **Title** — tên sản phẩm (ví dụ: "Premium Vietnam Arabica Coffee Beans")
-   - **Roast Level** — mức rang: Light, Medium, Dark, hoặc Italian
-   - **Bean Variety** — giống: Arabica, Robusta, Liberica, Excelsa, hoặc Blend
-   - **Origin** — xuất xứ (ví dụ: "Vietnam", "Brazil")
-   - **Processing** — phương pháp chế biến: Washed, Natural, Honey, hoặc Giling Basah
-   - **Description** — mô tả chi tiết sản phẩm
-   - **Price** — giá bán (USD/kg)
-   - **MOQ** — số lượng đặt hàng tối thiểu (kg)
-3. Ô trạng thái ở góc dưới bên phải hiển thị **"Ready for Sync"** (xanh) khi tất cả trường bắt buộc đã được điền
-4. Nhấn **"Save & Start Automation"**
-5. Campaign sẽ xuất hiện trên dashboard
+| Được phép | Không dùng |
+|-----------|------------|
+| **Settings** → kết nối Alibaba | **+ New campaign** / form tạo sản phẩm thủ công |
+| **Load from Alibaba** | **AI Optimize** |
+| **Post listings** | Các tab / nút khác ngoài Dashboard + Settings |
 
-### Tối Ưu Bằng AI (Tùy Chọn)
-
-Nếu bạn có [Google Gemini API key](https://aistudio.google.com/apikey), bạn có thể dùng AI để tạo tiêu đề và mô tả tối ưu:
-
-1. Thêm key vào file `.env.local`:
-   ```
-   NEXT_PUBLIC_GEMINI_API_KEY=gemini_key_của_bạn
-   ```
-2. Khởi động lại dashboard (`Ctrl+C` rồi `npm run dev`)
-3. Trong form tạo sản phẩm, nhấn **"AI Optimize"** — AI sẽ viết lại tiêu đề và mô tả cho SEO tốt hơn
-
-Tính năng này hoàn toàn tùy chọn. Bot vẫn hoạt động bình thường không cần AI.
-
-### Quản Lý Campaign
-
-- **Tạm dừng/Tiếp tục** — nhấn nút Pause hoặc Resume bên cạnh campaign
-- **Xem tất cả campaign** — hiển thị trên dashboard chính
-- Campaign được lưu trong file `campaigns.json` và không bị mất khi khởi động lại
+Dữ liệu sản phẩm dùng cho đăng listing được lấy từ bước **Load from Alibaba** (lưu cục bộ trong `campaigns.json`). Không có lịch tự động — mọi lần đăng listing đều do bạn bấm **Post listings**.
 
 ---
 
-## Dừng Bot
+### 1. Xác thực (Authentication) — một lần
 
-Để dừng dashboard, vào terminal đang chạy và nhấn **`Ctrl + C`**.
+1. Vào **Settings**: http://localhost:3000/settings  
+2. Nhấn **Open Alibaba authorization** → đăng nhập Alibaba → **Authorize**  
+3. Sau khi authorize, trình duyệt có thể chuyển tới trang lỗi — **bình thường**  
+4. **Sao chép toàn bộ URL** trên thanh địa chỉ (có tham số `code=...`)  
+5. Dán URL vào ô trên trang Settings (mã được trích tự động)  
+6. Nhấn **Connect**  
+7. Thấy thông báo xác thực thành công → token lưu vào `tokens.json` (tự động, không cần sửa tay)
 
-Để chạy lại, gõ `npm run dev`.
+**Kiểm tra:** Quay lại Dashboard — các nút **Load from Alibaba** và **Post listings** không còn bị vô hiệu vì “chưa kết nối”.
+
+**Nếu hết hạn token:** Lặp lại các bước trên trên trang Settings.
+
+---
+
+### 2. Load from Alibaba
+
+Dùng khi bạn muốn (hoặc cần) cập nhật danh sách sản phẩm từ tài khoản Alibaba vào dashboard.
+
+1. Mở **Dashboard**: http://localhost:3000  
+2. Nhấn **Load from Alibaba** (góc trên)  
+3. Đợi đến khi tải xong (có thể vài phút). **Giữ tab mở** trong lúc chạy  
+4. Bảng **Your products** hiển thị các dòng đã lưu (tối đa `SYNC_PRODUCT_LIMIT`, sắp xếp theo **Last updated** trên Alibaba)
+
+**Lưu ý:**
+
+- Lần mở dashboard **không** tự động gọi Alibaba — chỉ đọc file đã lưu cho đến khi bạn bấm **Load from Alibaba**  
+- Đây là **tải / đồng bộ danh sách** để xem và dùng làm nguồn cho bước 3, **không** phải đăng sản phẩm mới  
+- Số lượng trên Alibaba (ví dụ ~1.900) có thể lớn hơn số dòng trong app — app chỉ lấy **N sản phẩm cập nhật gần nhất** (`SYNC_PRODUCT_LIMIT`)
+
+---
+
+### 3. Post listings
+
+Dùng khi bạn muốn **tạo listing mới** trên Alibaba (bản sao / biến thể dựa trên sản phẩm đã load).
+
+1. Đảm bảo đã **xác thực** (bước 1) và đã **Load from Alibaba** ít nhất một lần (bước 2)  
+2. Trên Dashboard, nhấn **Post listings**  
+3. Đợi batch chạy xong (tối đa **5** listing mỗi lần bấm, cách nhau vài giây). **Giữ tab mở** — có thể mất vài phút  
+4. Khi xong:
+   - Thông báo xanh: số listing đăng thành công  
+   - Tab **Listing history**: sản phẩm nào đã chạy bot gần đây  
+
+**Điều gì xảy ra mỗi lần bấm:**
+
+- Bot chọn ngẫu nhiên tối đa **5** sản phẩm trong danh sách đã load  
+- Với mỗi sản phẩm: clone schema từ sản phẩm gốc trên Alibaba, điền title / ảnh / giá / thuộc tính / từ khóa / vận chuyển, rồi gọi API **tạo sản phẩm mới**  
+- Listing mới trên Alibaba thường ở trạng thái **Pending** (chờ duyệt) cho đến khi Alibaba phê duyệt — app **không** tự chuyển sang Active  
+
+**Lỗi:** Nếu thất bại, banner đỏ trên dashboard ghi lý do (kết nối, API Alibaba, v.v.). Xem thêm log trong terminal đang chạy `npm run dev`.
+
+**CLI (tùy chọn):** Cùng logic batch từ terminal:
+
+```bash
+npm run post-now
+```
+
+---
+
+## Dừng Dashboard
+
+Trong terminal: **`Ctrl + C`**. Chạy lại: `npm run dev`.
 
 ---
 
 ## Xử Lý Sự Cố
 
 | Vấn đề | Giải pháp |
-|---|---|
-| `npm install` lỗi | Kiểm tra [Node.js](https://nodejs.org/) đã cài chưa. Chạy `node --version` — cần v18+. |
-| Dashboard không khởi động | Kiểm tra file `.env.local` tồn tại và có App Key / App Secret. |
-| "Alibaba credentials not configured" | Thêm App Key và App Secret vào `.env.local` rồi khởi động lại. |
-| "No access token found" | Thực hiện Bước 5 ở trên (kết nối tài khoản Alibaba). |
-| Token hết hạn | Token tự làm mới. Nếu vẫn lỗi, lặp lại Bước 5 để lấy mã mới. |
-| AI Optimize không hoạt động | Bình thường — nghĩa là chưa đặt Gemini API key. Bot vẫn chạy không cần AI. |
+|--------|-----------|
+| `npm install` lỗi | Cài [Node.js](https://nodejs.org/) v18+. |
+| Dashboard không mở | Kiểm tra `.env.local` có App Key / App Secret. |
+| Nút Load / Post bị tắt | Làm lại **bước 1** (Settings → Connect). |
+| Load from Alibaba lỗi | Kiểm tra token; thử Connect lại trên Settings. |
+| Post listings — 0 thành công | Đọc thông báo lỗi trên dashboard và log terminal; đảm bảo đã Load from Alibaba trước. |
+| Sản phẩm mới Pending trên Alibaba | Bình thường — chờ duyệt hoặc kiểm tra Seller Center, không phải lỗi nút Post. |
+| Token hết hạn | Connect lại trên Settings. |
 
 ---
 
-## Cấu Trúc Dự Án
+## Cấu Trúc Dự Án (tham khảo)
 
 ```
-├── .env.local              ← Thông tin đăng nhập bí mật (không chia sẻ file này)
-├── tokens.json             ← Token xác thực (tự động lưu)
-├── campaigns.json          ← Dữ liệu campaign
-├── src/
-│   ├── app/                ← Các trang dashboard
-│   │   ├── page.tsx        ← Dashboard chính
-│   │   ├── settings/       ← Cài đặt & kết nối tài khoản
-│   │   ├── api/auth/       ← Xử lý OAuth tự động
-│   │   └── actions/        ← Logic phía server
-│   ├── components/         ← Giao diện (form sản phẩm)
-│   └── lib/                ← Logic cốt lõi
-│       ├── alibaba-api.ts  ← API client & ký request
-│       ├── ai-optimizer.ts ← Tạo nội dung bằng AI (tùy chọn)
-│       ├── automation-engine.ts ← Tự động đăng theo lịch
-│       └── campaign-manager.ts  ← Quản lý campaign
+├── .env.local              ← App Key / Secret (không commit)
+├── tokens.json             ← OAuth token (tự động, không commit)
+├── campaigns.json          ← Sản phẩm đã load + lịch sử post (không commit)
+├── src/app/page.tsx        ← Dashboard: Load from Alibaba, Post listings
+├── src/app/settings/       ← Xác thực OAuth
+└── src/lib/
+    ├── automation-engine.ts  ← Logic Post listings
+    └── sync-campaigns.ts     ← Logic Load from Alibaba
 ```
 
 ---
 
-Được xây dựng cho nhà xuất khẩu cà phê muốn tự động hóa việc đăng sản phẩm trên Alibaba.com.
+Được xây dựng cho nhà xuất khẩu cà phê cần quy trình rõ ràng: kết nối → tải sản phẩm → đăng listing mới theo yêu cầu.
