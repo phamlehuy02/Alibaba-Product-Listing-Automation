@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Shield, Key, RefreshCw, CheckCircle, AlertCircle, ArrowLeft, ExternalLink } from 'lucide-react';
 import { exchangeTokenAction } from '@/app/actions/auth';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
-export default function SettingsPage() {
+function SettingsContent() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -228,5 +228,13 @@ export default function SettingsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: '40px', color: 'white' }}>Loading settings...</div>}>
+      <SettingsContent />
+    </Suspense>
   );
 }

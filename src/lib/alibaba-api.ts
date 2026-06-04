@@ -44,9 +44,9 @@ export class AlibabaAPI {
   private getSystemParams(): Record<string, string> {
     const params: Record<string, string> = {
       app_key: this.config.appKey,
-      timestamp: Date.now().toString(),
-      sign_method: 'sha256',
       format: 'json',
+      sign_method: 'sha256',
+      timestamp: Date.now().toString(), // milliseconds
     };
 
     if (this.config.accessToken) {
@@ -116,17 +116,59 @@ export class AlibabaAPI {
     return this.execute('/alibaba/icbu/product/add', bizParams);
   }
 
+  async addProductRaw(productJson: any) {
+    const bizParams: Record<string, string> = {
+      product: typeof productJson === 'string' ? productJson : JSON.stringify(productJson)
+    };
+    return this.execute('/alibaba/icbu/product/add', bizParams);
+  }
+
+  async addProductSchema(catId: number, xml: string) {
+    const payload = {
+      cat_id: catId,
+      xml: xml,
+      language: 'english'
+    };
+    const bizParams: Record<string, string> = {
+      publish_request: JSON.stringify(payload)
+    };
+    const res = await this.execute('/icbu/product/schema/add', bizParams);
+    // Log raw response once so we can confirm the product_id field location
+    console.log('[addProductSchema raw]', JSON.stringify(res).substring(0, 300));
+    return res;
+  }
+
+  async getProductSchema(productId: string, catId: string) {
+    const bizParams: Record<string, string> = {
+      product_id: productId,
+      cat_id: catId,
+      language: 'english'
+    };
+    const res = await this.execute('/alibaba/icbu/product/schema/get', bizParams);
+    // API returns XML in result.data (primary), or legacy fields as fallback
+    return res.alibaba_icbu_product_schema_get_response?.schema ||
+           res.result?.schema ||
+           res.result?.data ||
+           res.schema ||
+           res.xml;
+  }
+
   async exchangeCodeForToken(code: string, redirectUri?: string) {
     const apiPath = '/auth/token/create';
     const params: Record<string, string> = {
       app_key: this.config.appKey,
       code: code,
-      timestamp: Date.now().toString(),
+      format: 'json',
       sign_method: 'sha256',
+      timestamp: Date.now().toString(), // milliseconds
     };
 
     const sign = this.generateSign(apiPath, params);
     params.sign = sign;
+
+    console.log('🔑 Exchanging code for token...');
+    console.log('  URL:', `${this.baseUrl}${apiPath}`);
+    console.log('  Params:', JSON.stringify({ ...params, sign: params.sign.substring(0, 8) + '...' }));
 
     const url = `${this.baseUrl}${apiPath}`;
     const response = await fetch(url, {
@@ -136,6 +178,7 @@ export class AlibabaAPI {
     });
 
     const data = await response.json();
+    console.log('  Response:', JSON.stringify(data));
 
     // Check for IOP-level errors
     if (data.code && data.code !== '0') {
@@ -155,9 +198,10 @@ export class AlibabaAPI {
     const apiPath = '/auth/token/refresh';
     const params: Record<string, string> = {
       app_key: this.config.appKey,
+      format: 'json',
       refresh_token: this.config.refreshToken,
-      timestamp: Date.now().toString(),
       sign_method: 'sha256',
+      timestamp: Date.now().toString(), // milliseconds
     };
 
     const sign = this.generateSign(apiPath, params);
@@ -184,15 +228,23 @@ export class AlibabaAPI {
   }
 
   /**
+   * List groups from Alibaba Photobank.
+   */
+  async listPhotobankGroups() {
+    return this.execute('/icbu/product/photobank/group/list', {});
+  }
+
+  /**
    * List images from Alibaba Photobank.
    */
-  async listPhotobankImages(page = 1, pageSize = 20) {
+  async listPhotobankImages(groupId: string, page = 1, pageSize = 20) {
     const bizParams: Record<string, string> = {
-      current_page: page.toString(),
-      page_size: pageSize.toString(),
+      groupId: groupId,
+      currentPage: page.toString(),
+      pageSize: pageSize.toString(),
     };
 
-    return this.execute('/alibaba/icbu/photobank/list', bizParams);
+    return this.execute('/icbu/product/photobank/list', bizParams);
   }
 
   /**
@@ -208,6 +260,107 @@ export class AlibabaAPI {
       bizParams.title = title;
     }
 
-    return this.execute('/alibaba/icbu/video.query', bizParams);
+    return this.execute('/alibaba/icbu/video/query', bizParams);
+  }
+
+  /**
+   * List products from Alibaba.
+   */
+  async listProducts(page = 1, pageSize = 10) {
+    const bizParams: Record<string, string> = {
+      current_page: page.toString(),
+      page_size: pageSize.toString(),
+    };
+
+    return this.execute('/alibaba/icbu/product/list', bizParams);
+  }
+
+  /**
+   * Get product details from Alibaba.
+   */
+  async getProduct(productId: string) {
+    try {
+      const bizParams: Record<string, string> = {
+        product_id: productId,
+      };
+      const apiRes = await this.execute('/alibaba/icbu/product/get', bizParams);
+      if (apiRes.alibaba_icbu_product_get_response?.product || apiRes.result?.product || apiRes.product) {
+        return apiRes;
+      }
+      throw new Error('No product found in API response');
+    } catch (apiError: any) {
+      console.warn(`API getProduct failed for ${productId}, falling back to scraping:`, apiError.message);
+      try {
+        const url = `https://www.alibaba.com/product-detail/a_${productId}.html`;
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP status ${res.status}`);
+        }
+        const html = await res.text();
+        const cleanText = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+        
+        let title = '';
+        let description = '';
+        let price = '10.00';
+        let images: string[] = [];
+        let videoId: string | undefined;
+
+        const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+        if (match) {
+          const data = JSON.parse(match[1].trim());
+          const product = Array.isArray(data) ? data.find((x: any) => x['@type'] === 'Product') : data;
+          const video = Array.isArray(data) ? data.find((x: any) => x['@type'] === 'VideoObject') : null;
+          
+          title = product?.name || '';
+          description = product?.description || '';
+          price = product?.offers?.price || '10.00';
+          images = product?.image || [];
+          
+          if (video?.contentUrl) {
+            const videoIdMatch = video.contentUrl.match(/\/(\d+)\.mp4/);
+            if (videoIdMatch) {
+              videoId = videoIdMatch[1];
+            }
+          }
+        }
+
+        let moq = '100kg';
+        const moqMatch = cleanText.match(/Minimum\s+order\s+quantity:\s*([\d\.]+\s*[a-zA-Z]+)/i) || 
+                         cleanText.match(/Min\.\s+order:\s*([\d\.]+\s*[a-zA-Z]+)/i);
+        if (moqMatch) {
+          moq = moqMatch[1].trim();
+        }
+
+        return {
+          alibaba_icbu_product_get_response: {
+            product: {
+              subject: title,
+              description: description,
+              main_image: {
+                images: images
+              },
+              product_video: videoId ? {
+                video_id: videoId
+              } : undefined,
+              sku_info: {
+                sku_list: [
+                  {
+                    price: price,
+                    moq: moq
+                  }
+                ]
+              },
+              category_id: 100009031
+            }
+          }
+        };
+      } catch (scrapeError: any) {
+        throw new Error(`Failed to fetch product via API and Scraping: ${scrapeError.message}`);
+      }
+    }
   }
 }

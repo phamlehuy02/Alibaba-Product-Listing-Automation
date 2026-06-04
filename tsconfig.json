@@ -23,6 +23,7 @@
       }
     ],
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["./src/*"]
     }
@@ -36,6 +37,9 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "scratch",
+    "test-*.ts",
+    "run-now.ts"
   ]
 }

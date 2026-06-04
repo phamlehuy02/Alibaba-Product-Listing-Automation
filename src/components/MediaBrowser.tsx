@@ -35,7 +35,9 @@ export default function MediaBrowser({ onClose, onSelect, initialImages = [], in
       const result = await getPhotobankImagesAction(page, 15);
       if (result.success) {
         // Alibaba API response structure can vary, but usually looks like this:
-        const data = result.data.alibaba_icbu_photobank_list_response?.photo_list?.photo || [];
+        const data = result.data.alibaba_icbu_photobank_list_response?.photo_list?.photo || 
+                     result.data.result?.photo_list?.photo || 
+                     result.data.result?.pagination_query_list?.list || [];
         setImages(data);
         // setTotalImages(result.data.total_count || 0);
       } else {
