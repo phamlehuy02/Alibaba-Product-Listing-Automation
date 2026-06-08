@@ -29,6 +29,7 @@ import {
 
 const TABLE_PAGE_SIZE = 25;
 const LISTING_BATCH_SIZE = 5;
+const LISTING_POOL_SIZE = 500;
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'queue'>('dashboard');
@@ -202,7 +203,7 @@ export default function Home() {
                 ? 'Connect Alibaba in Settings first'
                 : activeCount === 0
                   ? 'Load products or create a campaign first'
-                  : `Post up to ${LISTING_BATCH_SIZE} new listings`
+                  : `Post ${LISTING_BATCH_SIZE} random listings from the latest ${LISTING_POOL_SIZE}`
             }
           >
             {isPosting ? (
@@ -276,7 +277,7 @@ export default function Home() {
           <p className="stat-label">Eligible to post</p>
           <p className="stat-value">{activeCount}</p>
           <p className="stat-meta">
-            Each run posts up to {LISTING_BATCH_SIZE} new listings (random products)
+            Each run posts {LISTING_BATCH_SIZE} random listings from the latest {LISTING_POOL_SIZE}
           </p>
         </div>
       </div>
@@ -333,7 +334,8 @@ export default function Home() {
             <div className="alert" role="status">
               <Loader2 size={18} className="spin" style={{ flexShrink: 0 }} />
               <span>
-                Posting up to {LISTING_BATCH_SIZE} listings (AI variations, ~5s between each). This
+                Posting {LISTING_BATCH_SIZE} random listings from the latest {LISTING_POOL_SIZE} (~5s
+                between each). This
                 can take several minutes — keep this tab open.
               </span>
             </div>

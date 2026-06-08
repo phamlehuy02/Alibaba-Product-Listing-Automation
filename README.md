@@ -49,6 +49,10 @@ npm run dev
 
 Mở trình duyệt: **http://localhost:3000**
 
+> **Muốn dashboard tự chạy mỗi khi bật máy?**  
+> Làm **một lần** theo hướng dẫn: [Tự động khởi động dashboard](docs/auto-start.md)  
+> (chọn hướng dẫn **Mac** hoặc **Windows** trong file đó)
+
 ---
 
 ## Quy Trình Sử Dụng (3 Bước)
@@ -111,7 +115,7 @@ Dùng khi bạn muốn **tạo listing mới** trên Alibaba (bản sao / biến
 
 **Điều gì xảy ra mỗi lần bấm:**
 
-- Bot chọn ngẫu nhiên tối đa **5** sản phẩm trong danh sách đã load  
+- Bot chọn ngẫu nhiên **5** sản phẩm từ **500** sản phẩm cập nhật gần nhất trong danh sách đã load  
 - Với mỗi sản phẩm: clone schema từ sản phẩm gốc trên Alibaba, điền title / ảnh / giá / thuộc tính / từ khóa / vận chuyển, rồi gọi API **tạo sản phẩm mới**  
 - Listing mới trên Alibaba thường ở trạng thái **Pending** (chờ duyệt) cho đến khi Alibaba phê duyệt — app **không** tự chuyển sang Active  
 

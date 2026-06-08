@@ -11,8 +11,10 @@ import {
   ORIGIN_IDS,
   COMPANY_CERTS,
 } from './schema-maps';
+import { sortByLastUpdated } from './alibaba-product-utils';
 
 export const LISTING_BATCH_SIZE = 5;
+export const LISTING_POOL_SIZE = 500;
 
 export type ListingAttemptFailure = {
   campaignName: string;
@@ -36,7 +38,7 @@ export class AutomationEngine {
     return getAuthorizedApiClient();
   }
 
-  /** Post up to LISTING_BATCH_SIZE new listings from random active campaigns. */
+  /** Post up to LISTING_BATCH_SIZE new listings from random active campaigns in the latest LISTING_POOL_SIZE. */
   static async runListingBatch(): Promise<ListingBatchResult> {
     if (!process.env.ALIBABA_APP_KEY || !process.env.ALIBABA_APP_SECRET) {
       return {
@@ -57,8 +59,8 @@ export class AutomationEngine {
       };
     }
 
-    const campaigns = CampaignManager.getCampaigns().filter((c) => c.active);
-    if (campaigns.length === 0) {
+    const activeCampaigns = CampaignManager.getCampaigns().filter((c) => c.active);
+    if (activeCampaigns.length === 0) {
       return {
         success: false,
         attempted: 0,
@@ -67,23 +69,33 @@ export class AutomationEngine {
       };
     }
 
-    console.log(`Starting listing batch (${LISTING_BATCH_SIZE} posts)…`);
+    const pool = sortByLastUpdated(activeCampaigns).slice(0, LISTING_POOL_SIZE);
+    const shuffled = [...pool];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    const toPost = shuffled.slice(0, Math.min(LISTING_BATCH_SIZE, shuffled.length));
+
+    console.log(
+      `Starting listing batch (${toPost.length} posts from latest ${pool.length} products)…`
+    );
     let successfulPosts = 0;
     const failures: ListingAttemptFailure[] = [];
 
-    for (let i = 0; i < LISTING_BATCH_SIZE; i++) {
-      const campaign = campaigns[Math.floor(Math.random() * campaigns.length)];
-      console.log(`[Post ${i + 1}/${LISTING_BATCH_SIZE}] Processing: ${campaign.name}`);
+    for (let i = 0; i < toPost.length; i++) {
+      const campaign = toPost[i];
+      console.log(`[Post ${i + 1}/${toPost.length}] Processing: ${campaign.name}`);
       const attempt = await this.executeListing(campaign);
       if (attempt.ok) {
         successfulPosts++;
       } else {
         failures.push({ campaignName: campaign.name, reason: attempt.reason });
       }
-      if (i < LISTING_BATCH_SIZE - 1) await new Promise((r) => setTimeout(r, 5000));
+      if (i < toPost.length - 1) await new Promise((r) => setTimeout(r, 5000));
     }
 
-    console.log(`Listing batch complete. Posted ${successfulPosts}/${LISTING_BATCH_SIZE}.`);
+    console.log(`Listing batch complete. Posted ${successfulPosts}/${toPost.length}.`);
     const summaryError =
       successfulPosts === 0 && failures.length > 0
         ? failures
@@ -96,7 +108,7 @@ export class AutomationEngine {
 
     return {
       success: successfulPosts > 0,
-      attempted: LISTING_BATCH_SIZE,
+      attempted: toPost.length,
       successful: successfulPosts,
       failures: failures.length > 0 ? failures : undefined,
       error: summaryError,
@@ -511,24 +523,201 @@ export class AutomationEngine {
 
   // ── Media Helpers ─────────────────────────────────────────────────────────
 
+  /** Read scImages_* slots from schema/render XML (ordered 0..n, skips empty template fields). */
+  private static extractSchemaImages(xml: string): { url: string; fileId: string }[] {
+    const slots = new Map<number, { url: string; fileId: string }>();
+    const fieldRe = /<field id="scImages_(\d+)"[^>]*>([\s\S]*?)<\/field>/g;
+    let match: RegExpExecArray | null;
+    while ((match = fieldRe.exec(xml)) !== null) {
+      if (!match[2].includes('<value')) continue;
+      const valueMatch = match[2].match(/<value([^>]*)>([\s\S]*?)<\/value>/);
+      if (!valueMatch) continue;
+      const fileIdMatch = valueMatch[1].match(/fileId="([^"]*)"/);
+      const url = valueMatch[2].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/, '$1').trim();
+      if (!url) continue;
+      const index = Number(match[1]);
+      if (!slots.has(index)) {
+        slots.set(index, {
+          url,
+          fileId: fileIdMatch?.[1] || '',
+        });
+      }
+    }
+    return [...slots.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, img]) => img);
+  }
+
+  private static normalizeSourceImageUrl(url: string): string {
+    let normalized = url.trim();
+    if (normalized.startsWith('//')) normalized = `https:${normalized}`;
+    if (!normalized.startsWith('http')) normalized = `https://${normalized}`;
+    // Render schema uses thumbnail suffixes like foo.jpg_350x350.jpg — strip the size variant.
+    return normalized.replace(/(\.(jpe?g|png|webp))_(\d+)x(\d+)\.\2$/i, '$1');
+  }
+
+  /** Upload CDN-only source images to Photobank so publish gets valid fileIds. */
+  private static async ensurePhotobankFileIds(
+    api: AlibabaAPI,
+    images: { url: string; fileId: string }[],
+    groupId?: string
+  ): Promise<{ url: string; fileId: string }[]> {
+    const resolved: { url: string; fileId: string }[] = [];
+
+    for (const img of images) {
+      if (img.fileId && img.fileId !== '0') {
+        resolved.push({
+          url: this.normalizeSourceImageUrl(img.url),
+          fileId: img.fileId,
+        });
+        continue;
+      }
+
+      const sourceUrl = this.normalizeSourceImageUrl(img.url);
+      const fileName = sourceUrl.split('/').pop()?.split('?')[0] || 'product-image.jpg';
+      console.log(`📤 Uploading source image to Photobank: ${fileName}`);
+      const response = await fetch(sourceUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download source image (${response.status}): ${sourceUrl}`);
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const uploaded = await api.uploadPhotobankImage(fileName, buffer, groupId);
+      resolved.push(uploaded);
+    }
+
+    return resolved;
+  }
+
+  /** Resolve exact source listing images via schema/render + Photobank upload when needed. */
+  private static async resolveSourceListingImages(
+    api: AlibabaAPI,
+    baseProductId: string,
+    baseProductCatId: string | number,
+    campaign: any,
+    pDetails: any
+  ): Promise<{ url: string; fileId: string }[]> {
+    const groupId = campaign.alibabaListSnapshot?.group_id
+      ? String(campaign.alibabaListSnapshot.group_id)
+      : undefined;
+
+    try {
+      const renderXml = await api.renderProductSchema(baseProductId, baseProductCatId);
+      const renderImages = this.extractSchemaImages(renderXml);
+      if (renderImages.length) {
+        const publishable = await this.ensurePhotobankFileIds(api, renderImages, groupId);
+        if (publishable.length) {
+          console.log(`🖼️  ${publishable.length} images from source product render schema.`);
+          return publishable;
+        }
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn(`⚠️ schema/render image path failed: ${msg}`);
+    }
+
+    const withFileId = (images: { url: string; fileId: string }[]) =>
+      images.filter((img) => img.url && img.fileId && img.fileId !== '0');
+
+    const fromProduct = withFileId(AlibabaAPI.parseMainImages(pDetails));
+    if (fromProduct.length) {
+      console.log(`🖼️  ${fromProduct.length} images from source product API (with fileId).`);
+      return fromProduct;
+    }
+
+    const urlCandidates: string[] = [];
+    for (const img of AlibabaAPI.parseMainImages(pDetails)) {
+      if (img.url) urlCandidates.push(img.url);
+    }
+    if (urlCandidates.length === 0 && campaign.images?.length) {
+      urlCandidates.push(...campaign.images);
+    }
+
+    if (urlCandidates.length > 0) {
+      const asRenderImages = urlCandidates.map((url) => ({ url, fileId: '' }));
+      try {
+        const uploaded = await this.ensurePhotobankFileIds(api, asRenderImages, groupId);
+        if (uploaded.length) {
+          console.log(`🖼️  ${uploaded.length} images uploaded from source listing URLs.`);
+          return uploaded;
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.warn(`⚠️ Source image upload failed: ${msg}`);
+      }
+
+      console.log(`🔍 Matching ${urlCandidates.length} source image URL(s) in Photobank...`);
+      const matched = await this.resolvePhotoFileIds(api, urlCandidates);
+      if (matched.length) return matched;
+    }
+
+    return [];
+  }
+
+  private static injectSchemaImages(
+    xml: string,
+    images: { url: string; fileId: string }[]
+  ): string {
+    let imgIdx = 0;
+    return xml.replace(
+      /(<field id="scImages_\d+"[^>]*>)([\s\S]*?)(<\/field>)/g,
+      (match, open, inner, close) => {
+        if (imgIdx >= images.length) return match;
+        const img = images[imgIdx++];
+        const withoutValue = inner.replace(/<value[^>]*>[\s\S]*?<\/value>/g, '');
+        const escapedUrl = this.escapeXml(img.url);
+        const escapedFileId = this.escapeXml(img.fileId);
+        const fileIdAttr = img.fileId ? ` fileId="${escapedFileId}"` : '';
+        return `${open}${withoutValue}<value${fileIdAttr}>${escapedUrl}</value>${close}`;
+      }
+    );
+  }
+
+  /** Extract a stable image key from Alibaba CDN or Photobank URLs for matching. */
+  private static getImageMatchKey(url: string): string {
+    const kfMatch = url.match(/\/kf\/([HS][a-zA-Z0-9]+)/i);
+    if (kfMatch) return kfMatch[1].toLowerCase();
+    const parts = url.split('/');
+    const filename = parts[parts.length - 1].split('?')[0];
+    return filename.split('.')[0].split('_')[0].toLowerCase();
+  }
+
+  private static allTargetHashesResolved(
+    targetHashes: Set<string>,
+    hashToPhoto: Map<string, { url: string; fileId: string }>
+  ): boolean {
+    for (const hash of targetHashes) {
+      if (!hashToPhoto.has(hash)) return false;
+    }
+    return true;
+  }
+
   /**
-   * Attempt to resolve campaign image URLs to Photobank fileIds via URL matching.
-   * Returns matched { url, fileId }[] pairs. Unmatched URLs are dropped.
+   * Resolve source listing image URLs to Photobank fileIds, preserving input order.
+   * Scans paginated Photobank groups until all targets match or pages are exhausted.
    */
   private static async resolvePhotoFileIds(
     api: AlibabaAPI,
-    campaignImageUrls: string[]
+    sourceImageUrls: string[]
   ): Promise<{ url: string; fileId: string }[]> {
-    if (!campaignImageUrls?.length) return [];
+    if (!sourceImageUrls?.length) return [];
 
-    const getHash = (url: string) => {
-      const parts = url.split('/');
-      const filename = parts[parts.length - 1].split('?')[0];
-      return filename.split('.')[0].split('_')[0].toLowerCase();
+    const targetHashes = new Set(sourceImageUrls.map((url) => this.getImageMatchKey(url)));
+    const hashToPhoto = new Map<string, { url: string; fileId: string }>();
+
+    const registerPhoto = (photo: { url?: string; id?: string | number }) => {
+      if (!photo.url || photo.id == null) return;
+      const entry = { url: photo.url, fileId: String(photo.id) };
+      const photoKey = this.getImageMatchKey(photo.url);
+      if (targetHashes.has(photoKey) && !hashToPhoto.has(photoKey)) {
+        hashToPhoto.set(photoKey, entry);
+      }
+      const lowerUrl = photo.url.toLowerCase();
+      for (const targetHash of targetHashes) {
+        if (!hashToPhoto.has(targetHash) && lowerUrl.includes(targetHash)) {
+          hashToPhoto.set(targetHash, entry);
+        }
+      }
     };
-
-    const targetHashes = new Set(campaignImageUrls.map(getHash));
-    const matched: { url: string; fileId: string }[] = [];
 
     try {
       const groupsResult = await api.listPhotobankGroups();
@@ -536,67 +725,48 @@ export class AutomationEngine {
         groupsResult.alibaba_icbu_photobank_group_list_response?.result?.groups ||
         groupsResult.result?.groups || [];
 
-      const allGroups = [
-        ...groups.map((g: any) => String(g.id)),
-        '-1', '0', ''
-      ];
+      const allGroups = [...groups.map((g: any) => String(g.id)), '-1', '0', ''];
 
-      for (const groupId of allGroups) {
-        if (matched.length >= campaignImageUrls.length) break;
-        const imgResult = await api.listPhotobankImages(groupId, 1, 100);
-        const photoList =
-          imgResult.alibaba_icbu_photobank_list_response?.photo_list?.photo ||
-          imgResult.result?.photo_list?.photo ||
-          imgResult.result?.pagination_query_list?.list || [];
+      outer: for (const groupId of allGroups) {
+        for (let page = 1; page <= 10; page++) {
+          const imgResult = await api.listPhotobankImages(groupId, page, 100);
+          const photoList =
+            imgResult.alibaba_icbu_photobank_list_response?.photo_list?.photo ||
+            imgResult.result?.photo_list?.photo ||
+            imgResult.result?.pagination_query_list?.list || [];
 
-        for (const photo of photoList) {
-          if (!photo.url) continue;
-          const photoHash = getHash(photo.url);
-          if (targetHashes.has(photoHash)) {
-            if (!matched.some(m => m.fileId === String(photo.id))) {
-              matched.push({ url: photo.url, fileId: String(photo.id) });
-              if (matched.length >= campaignImageUrls.length) break;
-            }
+          if (!Array.isArray(photoList) || photoList.length === 0) break;
+
+          for (const photo of photoList) {
+            registerPhoto(photo);
           }
+
+          if (this.allTargetHashesResolved(targetHashes, hashToPhoto)) break outer;
         }
       }
     } catch (e) {
       console.error('⚠️ Error during photobank URL matching:', e);
+      return [];
     }
 
-    console.log(`📷 Hash match: ${matched.length}/${campaignImageUrls.length} campaign images resolved from Photobank.`);
-    return matched;
-  }
+    const ordered = sourceImageUrls
+      .map((url) => hashToPhoto.get(this.getImageMatchKey(url)))
+      .filter((img): img is { url: string; fileId: string } => Boolean(img));
 
-  /**
-   * Fetch dynamic media (images + video).
-   * Priority: campaign-stored images → Photobank keyword group → any group.
-   *           campaign.video_id → Video API query.
-   */
-  private static async fetchDynamicMedia(
-    api: AlibabaAPI,
-    keyword: string,
-    campaignImages?: string[],
-    campaignVideoId?: string
-  ) {
-    let images: { url: string; fileId: string }[] = [];
-    let videoId: string | undefined = campaignVideoId;
+    if (ordered.length === 0) {
+      console.log(`📷 Photobank match: 0/${sourceImageUrls.length} source listing images.`);
+      return [];
+    }
 
-    // 1. Try to match stored campaign image URLs
-    if (campaignImages?.length) {
-      console.log(`🔍 Attempting URL-based match for ${campaignImages.length} stored campaign images...`);
-      images = await this.resolvePhotoFileIds(api, campaignImages);
+    if (ordered.length < sourceImageUrls.length) {
+      console.log(
+        `📷 Photobank partial match: ${ordered.length}/${sourceImageUrls.length} source listing images.`
+      );
     } else {
-      console.log(`⏭️  No campaign images provided. Will retain base product images.`);
+      console.log(`📷 Resolved ${ordered.length}/${sourceImageUrls.length} source listing images from Photobank.`);
     }
 
-    if (videoId) {
-      console.log(`🎬 Using stored campaign video_id: ${videoId}`);
-    } else {
-      console.log(`⏭️  No campaign video provided. Will retain base product video.`);
-    }
-
-    return { images, videoId };
+    return ordered;
   }
 
   // ── Core Listing Flow ─────────────────────────────────────────────────────
@@ -613,29 +783,7 @@ export class AutomationEngine {
         return { ok: false, reason: 'Not connected to Alibaba' };
       }
 
-      // 3. Resolve media (images + video)
-      let mediaKeyword = 'coffee';
-      const pType = campaign.template.productType;
-      if (pType === 'green-beans') {
-        mediaKeyword = 'green coffee';
-      } else if (pType === 'drip-bag') {
-        mediaKeyword = 'drip bag';
-      } else if (pType === 'ground-coffee') {
-        mediaKeyword = 'ground coffee';
-      } else {
-        mediaKeyword = 'roasted coffee';
-      }
-      const dynamicMedia = await this.fetchDynamicMedia(
-        api, mediaKeyword, campaign.images, campaign.video_id
-      );
-
-      let finalImages = dynamicMedia.images;
-
-      if (!finalImages.length && !campaign.template.title && !campaign.template.description) {
-        console.log(`📋 Note: No template overrides provided. Relying purely on base product cloning.`);
-      }
-
-      // 4. Fetch base product schema to clone
+      // 3. Fetch base product schema to clone
       let baseProductId = campaign.template.baseProductId;
       let baseProductCatId = campaign.template.category || 100009031;
 
@@ -704,63 +852,27 @@ export class AutomationEngine {
         console.log(`📄 Description injected (${newDescription.length} chars)`);
       }
 
-      // 5c. Product images (scImages_0..5 sub-fields)
-      if (!finalImages.length) {
-        const baseImages = pDetails.mainImage?.images || [];
-        if (baseImages.length > 0) {
-          console.log(`🔍 Resolving ${baseImages.length} base product images from Photobank...`);
-          finalImages = await this.resolvePhotoFileIds(api, baseImages);
-        }
-      }
-
-      if (!finalImages.length) {
-        // Fallback: Query photobank group matching the product type
-        console.log(`⚠️ No matched base product images found in Photobank. Falling back to fetching images from matching Photobank group...`);
-        try {
-          const groupsResult = await api.listPhotobankGroups();
-          const groups = groupsResult.result?.groups || [];
-          
-          let targetGroupName = 'Roasted Coffee ';
-          if (pType === 'green-beans') {
-            targetGroupName = 'Green bean coffee';
-          } else if (pType === 'drip-bag') {
-            targetGroupName = 'Coffee filter bag';
-          } else if (pType === 'ground-coffee') {
-            targetGroupName = 'Roasted Coffee ';
-          }
-          
-          const matchedGroup = groups.find((g: any) => g.name.toLowerCase().trim() === targetGroupName.toLowerCase().trim());
-          if (matchedGroup) {
-            console.log(`🔍 Found matching Photobank group "${matchedGroup.name}" (${matchedGroup.id}). Fetching images...`);
-            const imgRes = await api.listPhotobankImages(String(matchedGroup.id), 1, 10);
-            const list = imgRes.result?.pagination_query_list?.list || imgRes.result?.photo_list?.photo || [];
-            finalImages = list.slice(0, 6).map((img: any) => ({
-              url: img.url,
-              fileId: String(img.id)
-            }));
-            console.log(`✅ Fetched ${finalImages.length} images from group "${matchedGroup.name}".`);
-          } else {
-            console.warn(`⚠️ Could not find photobank group matching "${targetGroupName}".`);
-          }
-        } catch (err: any) {
-          console.error(`❌ Failed to fetch photobank fallback images:`, err.message);
-        }
-      }
-
-      if (finalImages.length) {
-        let imgIdx = 0;
-        baseXml = baseXml.replace(
-          /(<field id="scImages_\d+"[^>]*>)([\s\S]*?)(<\/field>)/g,
-          (match, open, inner, close) => {
-            if (imgIdx >= finalImages.length) return match;
-            const img = finalImages[imgIdx++];
-            const withoutValue = inner.replace(/<value[^>]*>[\s\S]*?<\/value>/g, '');
-            const escapedUrl = this.escapeXml(img.url);
-            const escapedFileId = this.escapeXml(img.fileId);
-            return `${open}${withoutValue}<value fileId="${escapedFileId}">${escapedUrl}</value>${close}`;
-          }
+      // 5c. Product images — exact image set from the source listing being duplicated
+      const sourceImages = await this.resolveSourceListingImages(
+        api,
+        baseProductId,
+        baseProductCatId,
+        campaign,
+        pDetails
+      );
+      if (sourceImages.length) {
+        baseXml = this.injectSchemaImages(baseXml, sourceImages);
+        console.log(
+          `🖼️  Injected ${sourceImages.length} images from source listing (product ${baseProductId}).`
         );
-        console.log(`🖼️  ${imgIdx} images injected into scImages sub-fields.`);
+      } else {
+        console.warn(`⚠️ No publishable images for ${campaign.name} (product ${baseProductId}).`);
+        return {
+          ok: false,
+          reason:
+            'Main photo missing — could not load image fileIds from the source product. ' +
+            'Ensure the Alibaba product/get API is authorized and the source listing still has images.',
+        };
       }
 
       // 5d. All structured product attributes (Critical → High priority)
@@ -789,6 +901,7 @@ export class AutomationEngine {
       console.log(`  ✓ [priceUnit] = "${priceUnitVal}" (mapped from "${unitStr}")`);
 
       // 5e-2. Product Keywords
+      const pType = campaign.template.productType;
       let keywordsList: string[] = [];
       let defaultKeywords = ['Coffee Beans', 'Specialty Coffee', 'Vietnam Coffee'];
       if (pType === 'green-beans') {

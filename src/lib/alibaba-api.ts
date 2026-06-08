@@ -90,6 +90,40 @@ export class AlibabaAPI {
     return data;
   }
 
+  /** Multipart upload for photobank image_bytes (cannot use URL-encoded execute). */
+  private async executeMultipart(
+    apiPath: string,
+    bizParams: Record<string, string>,
+    fileField: string,
+    fileBuffer: Buffer,
+    fileName: string
+  ): Promise<any> {
+    const systemParams = this.getSystemParams();
+    const allParams = { ...systemParams, ...bizParams, method: apiPath };
+    const sign = this.generateSign(apiPath, allParams);
+
+    const form = new FormData();
+    for (const [key, value] of Object.entries(allParams)) {
+      form.append(key, value);
+    }
+    form.append('sign', sign);
+    form.append(fileField, new Blob([fileBuffer]), fileName);
+
+    const response = await fetch(`${this.apiBaseUrl}${apiPath}`, {
+      method: 'POST',
+      headers: { 'X-Protocol': 'GOP' },
+      body: form,
+    });
+
+    const data = await response.json();
+    if (data.code && data.code !== '0') {
+      const errorMsg = `Alibaba API Error [${data.code}]: ${data.message || data.msg || 'Unknown error'}`;
+      console.error(errorMsg, { request_id: data.request_id });
+      throw new Error(errorMsg);
+    }
+    return data;
+  }
+
   async addProduct(productData: any) {
     const bizParams: Record<string, string> = {
       product: JSON.stringify({
@@ -142,15 +176,121 @@ export class AlibabaAPI {
     const bizParams: Record<string, string> = {
       product_id: productId,
       cat_id: catId,
-      language: 'english'
+      language: 'english',
     };
-    const res = await this.execute('/alibaba/icbu/product/schema/get', bizParams);
-    // API returns XML in result.data (primary), or legacy fields as fallback
-    return res.alibaba_icbu_product_schema_get_response?.schema ||
-           res.result?.schema ||
-           res.result?.data ||
-           res.schema ||
-           res.xml;
+    const apiPaths = ['/icbu/product/schema/get', '/alibaba/icbu/product/schema/get'];
+    let lastError: Error | null = null;
+
+    for (const apiPath of apiPaths) {
+      try {
+        const res = await this.execute(apiPath, bizParams);
+        const schema =
+          res.alibaba_icbu_product_schema_get_response?.schema ||
+          res.result?.schema ||
+          res.result?.data ||
+          res.schema ||
+          res.xml;
+        if (schema) {
+          console.log(`✅ Product schema loaded via ${apiPath}`);
+          return schema;
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`⚠️ ${apiPath} failed:`, lastError.message);
+      }
+    }
+
+    throw lastError ?? new Error('Empty schema returned from all schema/get endpoints');
+  }
+
+  /** Render existing product schema with field values (includes image URLs from source listing). */
+  async renderProductSchema(productId: string, catId: string | number): Promise<string> {
+    const res = await this.execute('/icbu/product/schema/render', {
+      render_request: JSON.stringify({
+        product_id: String(productId),
+        cat_id: Number(catId),
+        language: 'english',
+      }),
+    });
+    const xml = res.result?.data || res.data || '';
+    if (!xml) throw new Error('Empty render schema returned');
+    console.log(`✅ Product render schema loaded for ${productId}`);
+    return xml;
+  }
+
+  /** Upload image bytes to Photobank; returns { url, fileId }. */
+  async uploadPhotobankImage(
+    fileName: string,
+    imageBytes: Buffer,
+    groupId?: string
+  ): Promise<{ url: string; fileId: string }> {
+    const bizParams: Record<string, string> = { file_name: fileName };
+    if (groupId) bizParams.group_id = groupId;
+
+    const res = await this.executeMultipart(
+      '/alibaba/icbu/photobank/upload',
+      bizParams,
+      'image_bytes',
+      imageBytes,
+      fileName
+    );
+
+    const uploaded =
+      res.result?.response_object ||
+      res.upload_image_response ||
+      res.alibaba_icbu_photobank_upload_response?.upload_image_response ||
+      res.result?.upload_image_response;
+
+    const fileId = uploaded?.file_id ?? uploaded?.fileId ?? uploaded?.id;
+    let url = uploaded?.photobank_url ?? uploaded?.photobankUrl ?? uploaded?.url;
+    if (url?.startsWith('//')) url = `https:${url}`;
+    if (!fileId || !url) {
+      throw new Error(
+        `Photobank upload did not return file_id and url: ${JSON.stringify(res).substring(0, 300)}`
+      );
+    }
+
+    return { url: String(url), fileId: String(fileId) };
+  }
+
+  /** Normalize main_image from product get API into { url, fileId }[]. */
+  static parseMainImages(product: any): { url: string; fileId: string }[] {
+    const images: { url: string; fileId: string }[] = [];
+    const raw =
+      product?.main_image?.images ||
+      product?.mainImage?.images ||
+      product?.main_image?.image_list ||
+      [];
+
+    const list = Array.isArray(raw) ? raw : [raw];
+    for (const item of list) {
+      if (typeof item === 'string' && item.trim()) {
+        images.push({ url: item.trim(), fileId: '' });
+        continue;
+      }
+      if (!item || typeof item !== 'object') continue;
+      const url =
+        item.url ||
+        item.image_url ||
+        item.imageUrl ||
+        item.original_url ||
+        item.originalUrl ||
+        '';
+      const fileId = String(
+        item.file_id ?? item.fileId ?? item.id ?? item.image_id ?? item.imageId ?? ''
+      );
+      if (url) images.push({ url: String(url), fileId });
+    }
+    return images;
+  }
+
+  private static extractProductFromResponse(apiRes: any): any | null {
+    return (
+      apiRes?.alibaba_icbu_product_get_response?.product ||
+      apiRes?.result?.product ||
+      apiRes?.product ||
+      null
+    );
   }
 
   async exchangeCodeForToken(code: string, redirectUri?: string) {
@@ -295,19 +435,44 @@ export class AlibabaAPI {
    * Get product details from Alibaba.
    */
   async getProduct(productId: string) {
-    try {
-      const bizParams: Record<string, string> = {
-        product_id: productId,
-      };
-      const apiRes = await this.execute('/alibaba/icbu/product/get', bizParams);
-      if (apiRes.alibaba_icbu_product_get_response?.product || apiRes.result?.product || apiRes.product) {
-        return apiRes;
-      }
-      throw new Error('No product found in API response');
-    } catch (apiError: any) {
-      console.warn(`API getProduct failed for ${productId}, falling back to scraping:`, apiError.message);
+    const requestBody = { productId: String(productId), language: 'english' };
+    const apiAttempts: Array<{ path: string; params: Record<string, string> }> = [
+      {
+        path: '/icbu/product/get',
+        params: { product_get_request: JSON.stringify(requestBody) },
+      },
+      {
+        path: '/alibaba/icbu/product/get',
+        params: { product_id: String(productId), language: 'english' },
+      },
+    ];
+    let lastError: Error | null = null;
+
+    for (const { path: apiPath, params } of apiAttempts) {
       try {
-        const url = `https://www.alibaba.com/product-detail/a_${productId}.html`;
+        const apiRes = await this.execute(apiPath, params);
+        const product = AlibabaAPI.extractProductFromResponse(apiRes);
+        if (product) {
+          const parsedImages = AlibabaAPI.parseMainImages(product);
+          const withFileId = parsedImages.filter((img) => img.fileId).length;
+          console.log(
+            `✅ Product details loaded via ${apiPath} (${parsedImages.length} images, ${withFileId} with fileId)`
+          );
+          return apiRes;
+        }
+        lastError = new Error('No product found in API response');
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`⚠️ ${apiPath} failed:`, lastError.message);
+      }
+    }
+
+    console.warn(
+      `API getProduct failed for ${productId}, falling back to scraping:`,
+      lastError?.message ?? 'unknown error'
+    );
+    try {
+      const url = `https://www.alibaba.com/product-detail/a_${productId}.html`;
         const res = await fetch(url, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -351,32 +516,33 @@ export class AlibabaAPI {
           moq = moqMatch[1].trim();
         }
 
-        return {
-          alibaba_icbu_product_get_response: {
-            product: {
-              subject: title,
-              description: description,
-              main_image: {
-                images: images
-              },
-              product_video: videoId ? {
-                video_id: videoId
-              } : undefined,
-              sku_info: {
-                sku_list: [
-                  {
-                    price: price,
-                    moq: moq
-                  }
-                ]
-              },
-              category_id: 100009031
-            }
-          }
-        };
-      } catch (scrapeError: any) {
-        throw new Error(`Failed to fetch product via API and Scraping: ${scrapeError.message}`);
-      }
+      return {
+        alibaba_icbu_product_get_response: {
+          product: {
+            subject: title,
+            description: description,
+            main_image: {
+              images: images,
+            },
+            product_video: videoId
+              ? {
+                  video_id: videoId,
+                }
+              : undefined,
+            sku_info: {
+              sku_list: [
+                {
+                  price: price,
+                  moq: moq,
+                },
+              ],
+            },
+            category_id: 100009031,
+          },
+        },
+      };
+    } catch (scrapeError: any) {
+      throw new Error(`Failed to fetch product via API and Scraping: ${scrapeError.message}`);
     }
   }
 }
