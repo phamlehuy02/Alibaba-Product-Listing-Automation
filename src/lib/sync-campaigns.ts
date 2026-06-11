@@ -73,6 +73,8 @@ export function extractProductList(listResponse: Record<string, unknown> | null 
   if (!listResponse) return [];
   const fromResult = (listResponse as any)?.result?.products;
   if (Array.isArray(fromResult) && fromResult.length > 0) return fromResult;
+  const fromV2 = AlibabaAPI.extractProductListV2(listResponse);
+  if (fromV2.length > 0) return fromV2;
   const fromIcbu =
     (listResponse as any)?.alibaba_icbu_product_list_response?.products?.product;
   if (Array.isArray(fromIcbu)) return fromIcbu;
@@ -84,6 +86,8 @@ export function extractTotalFromListResponse(
   listResponse: Record<string, unknown> | null | undefined
 ): number | null {
   if (!listResponse) return null;
+  const fromV2 = AlibabaAPI.extractTotalV2(listResponse);
+  if (fromV2 != null) return fromV2;
   const root =
     (listResponse as any)?.alibaba_icbu_product_list_response ??
     (listResponse as any)?.result;
@@ -116,14 +120,13 @@ function computeHasMore(
 }
 
 function campaignFromListItem(product: any, previous?: Campaign): Campaign {
-  const productId = String(product.id || product.product_id);
+  const productId = AlibabaAPI.getProductId(product);
   const subject =
-    product.subject ||
-    product.product_name ||
-    product.title ||
+    AlibabaAPI.getProductTitle(product) ||
     previous?.template?.title ||
     'Untitled Product';
-  const listImages: string[] = product.main_image?.images || [];
+  const listImages = AlibabaAPI.parseMainImages(product).map((img) => img.url);
+  const trade = product.trade_info as { price?: string | number; moq?: string | number } | undefined;
 
   return {
     id: `imported_${productId}`,
@@ -132,11 +135,12 @@ function campaignFromListItem(product: any, previous?: Campaign): Campaign {
       ...previous?.template,
       title: subject,
       description: previous?.template?.description || '',
-      price: product.price ?? previous?.template?.price ?? '10.00',
-      moq: product.moq ?? previous?.template?.moq ?? '100',
+      price: product.price ?? trade?.price ?? previous?.template?.price ?? '10.00',
+      moq: product.moq ?? trade?.moq ?? previous?.template?.moq ?? '100',
       category:
         product.category_id ||
         product.categoryId ||
+        product.category_info?.category_id ||
         previous?.template?.category ||
         '100009031',
       baseProductId: productId,
@@ -149,8 +153,8 @@ function campaignFromListItem(product: any, previous?: Campaign): Campaign {
     lastRun: previous?.lastRun,
     images: listImages.length > 0 ? listImages : previous?.images,
     video_id: previous?.video_id,
-    gmtModified: product.gmt_modified || product.gmtModified || previous?.gmtModified,
-    alibabaStatus: product.status || previous?.alibabaStatus,
+    gmtModified: AlibabaAPI.getGmtModified(product) || previous?.gmtModified,
+    alibabaStatus: product.status || product.basic_info?.status || previous?.alibabaStatus,
     alibabaListSnapshot: product,
   };
 }
@@ -188,13 +192,18 @@ export async function syncCampaignsPage(
           )
     );
 
+    let importedThisPage = 0;
     for (const product of products) {
       if (importedById.size >= importLimit) break;
 
-      const productId = String(product.id || product.product_id);
+      const productId = AlibabaAPI.getProductId(product);
+      if (!productId) continue;
+
       const campaignId = `imported_${productId}`;
       const previous = CampaignManager.getCampaigns().find((c) => c.id === campaignId);
+      const isNew = !importedById.has(campaignId);
       importedById.set(campaignId, campaignFromListItem(product, previous));
+      if (isNew) importedThisPage++;
     }
 
     const imported = sortByLastUpdated(Array.from(importedById.values()));
@@ -226,7 +235,7 @@ export async function syncCampaignsPage(
       success: true,
       page,
       pageSize,
-      importedThisPage: importedById.size,
+      importedThisPage,
       totalImported: imported.length,
       alibabaTotal,
       hasMore,

@@ -15,6 +15,7 @@ import {
   Play,
 } from 'lucide-react';
 import ProductForm from '@/components/ProductForm';
+import ListingEditor from '@/components/ListingEditor';
 import {
   loadCampaignsAction,
   runListingBatchAction,
@@ -28,12 +29,14 @@ import {
 } from '@/lib/alibaba-product-utils';
 
 const TABLE_PAGE_SIZE = 25;
-const LISTING_BATCH_SIZE = 5;
-const LISTING_POOL_SIZE = 500;
+const DUPLICATE_BATCH_SIZE = 5;
+const DUPLICATE_DATE_START = '2026-05-26';
+const DUPLICATE_DATE_END = '2026-06-01';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'queue'>('dashboard');
-  const [view, setView] = useState<'dashboard' | 'form'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'form' | 'editor'>('dashboard');
+  const [editingCampaign, setEditingCampaign] = useState<any | null>(null);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -72,8 +75,10 @@ export default function Home() {
           setSyncError(result.error || 'Sync failed');
           break;
         }
-        if (result.alibabaTotal != null) setAlibabaTotal(result.alibabaTotal);
-        hasMore = result.hasMore;
+        if ('alibabaTotal' in result && result.alibabaTotal != null) {
+          setAlibabaTotal(result.alibabaTotal);
+        }
+        hasMore = 'hasMore' in result ? result.hasMore : false;
         page++;
       }
     } catch (e: any) {
@@ -95,9 +100,13 @@ export default function Home() {
           result.failures?.length
             ? ` ${result.failures.length} attempt(s) failed.`
             : '';
+        const pairLines =
+          result.pairs
+            ?.map((p) => `${p.source} → ${p.clone}`)
+            .join('; ') ?? '';
         setBatchMessage({
           type: 'success',
-          text: `Posted ${result.successful} of ${result.attempted} new listings.${partial} Check Listing history for details.`,
+          text: `Duplicated ${result.successful} of ${result.attempted} sources (May 26–31) via Seller Center.${partial} ${pairLines} Saved to scratch/listing-pairs.json.`,
         });
         setActiveTab('queue');
       } else {
@@ -171,11 +180,24 @@ export default function Home() {
   const importedCount = campaigns.length;
   const isTableLoading = isSyncing;
   const activeCount = campaigns.filter((c) => c.active).length;
-  const canPost = isAuthenticated && activeCount > 0 && !isSyncing && !isPosting;
+  const canPost = isAuthenticated && !isSyncing && !isPosting;
   const isBusy = isSyncing || isPosting;
 
   if (view === 'form') {
     return <ProductForm onBack={() => setView('dashboard')} />;
+  }
+
+  if (view === 'editor' && editingCampaign) {
+    return (
+      <ListingEditor
+        campaign={editingCampaign}
+        onBack={() => {
+          setView('dashboard');
+          setEditingCampaign(null);
+          loadCampaigns();
+        }}
+      />
+    );
   }
 
   return (
@@ -201,20 +223,18 @@ export default function Home() {
             title={
               !isAuthenticated
                 ? 'Connect Alibaba in Settings first'
-                : activeCount === 0
-                  ? 'Load products or create a campaign first'
-                  : `Post ${LISTING_BATCH_SIZE} random listings from the latest ${LISTING_POOL_SIZE}`
+                : `Duplicate ${DUPLICATE_BATCH_SIZE} random listings (${DUPLICATE_DATE_START} – ${DUPLICATE_DATE_END}) via Product V2`
             }
           >
             {isPosting ? (
               <>
                 <Loader2 size={18} className="spin" />
-                Posting…
+                Duplicating…
               </>
             ) : (
               <>
                 <Play size={18} />
-                Post listings
+                Duplicate 5 listings
               </>
             )}
           </button>
@@ -274,10 +294,11 @@ export default function Home() {
               <Play size={22} />
             </div>
           </div>
-          <p className="stat-label">Eligible to post</p>
+          <p className="stat-label">Active products</p>
           <p className="stat-value">{activeCount}</p>
           <p className="stat-meta">
-            Each run posts {LISTING_BATCH_SIZE} random listings from the latest {LISTING_POOL_SIZE}
+            Duplicate run picks {DUPLICATE_BATCH_SIZE} random listings updated {DUPLICATE_DATE_START}–
+            {DUPLICATE_DATE_END}
           </p>
         </div>
       </div>
@@ -334,9 +355,8 @@ export default function Home() {
             <div className="alert" role="status">
               <Loader2 size={18} className="spin" style={{ flexShrink: 0 }} />
               <span>
-                Posting {LISTING_BATCH_SIZE} random listings from the latest {LISTING_POOL_SIZE} (~5s
-                between each). This
-                can take several minutes — keep this tab open.
+                Duplicating {DUPLICATE_BATCH_SIZE} listings via Product V2 (~5s between each). Keep
+                this tab open.
               </span>
             </div>
           )}
@@ -387,7 +407,7 @@ export default function Home() {
                     Showing {(tablePage - 1) * TABLE_PAGE_SIZE + 1}–
                     {Math.min(tablePage * TABLE_PAGE_SIZE, filteredCampaigns.length)} of{' '}
                     {filteredCampaigns.length.toLocaleString()}
-                    {searchQuery ? ' matches' : ''}
+                    {searchQuery ? ' matches' : ''}. Click a row to open the full listing editor.
                   </p>
                 )}
                 <table className="data-table">
@@ -400,7 +420,24 @@ export default function Home() {
                   </thead>
                   <tbody>
                     {pagedCampaigns.map((item) => (
-                      <tr key={item.id}>
+                      <tr
+                        key={item.id}
+                        className="data-table__row--clickable"
+                        onClick={() => {
+                          setEditingCampaign(item);
+                          setView('editor');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setEditingCampaign(item);
+                            setView('editor');
+                          }
+                        }}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`Edit listing ${item.name}`}
+                      >
                         <td>
                           <div className="product-cell">
                             <div className="product-thumb">

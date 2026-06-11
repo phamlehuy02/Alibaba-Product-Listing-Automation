@@ -12,6 +12,12 @@ export default function AppNav() {
         Dashboard
       </Link>
       <Link
+        href="/compare"
+        className={`nav-link ${pathname.startsWith('/compare') ? 'nav-link--active' : ''}`}
+      >
+        Compare
+      </Link>
+      <Link
         href="/settings"
         className={`nav-link ${pathname.startsWith('/settings') ? 'nav-link--active' : ''}`}
       >

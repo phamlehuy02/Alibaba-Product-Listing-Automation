@@ -13,6 +13,10 @@ yarn-error.log*
 tokens.json
 campaigns.json
 data/
+!data/title-vocabulary.json
 scratch/
 logs/
+.playwright-profile/
+.playwright-profile/storage-state.json
 .idea/
+tsconfig.tsbuildinfo

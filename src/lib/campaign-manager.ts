@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import path from 'path';
+import type { ListingSnapshot } from './listing-v2-compare';
 
 export interface CampaignTemplate {
   title: string;
@@ -53,6 +54,8 @@ export interface Campaign {
   alibabaStatus?: string;
   /** Raw list row preserved for debugging / future fields */
   alibabaListSnapshot?: Record<string, unknown>;
+  /** Full listing data fetched from Alibaba + local edits (listing editor) */
+  listingSnapshot?: ListingSnapshot;
 }
 
 const CAMPAIGNS_FILE = path.join(process.cwd(), 'campaigns.json');

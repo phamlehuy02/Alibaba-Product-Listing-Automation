@@ -8,6 +8,14 @@
     "start": "next start",
     "lint": "next lint",
     "post-now": "npx tsx run-now.ts",
+    "duplicate-v2": "npx tsx scripts/duplicate-v2-batch.ts",
+    "duplicate-playwright": "npx tsx scripts/playwright-duplicate-batch.ts",
+    "playwright-login": "npx tsx scripts/playwright-login-once.ts",
+    "playwright-test-images": "npx tsx scripts/playwright-test-images.ts",
+    "playwright-test-title": "npx tsx scripts/playwright-test-title.ts",
+    "count-pool": "npx tsx scripts/count-pool-range.ts",
+    "probe-v2": "npx tsx scripts/probe-v2-api.ts",
+    "test:titles": "npx tsx scripts/test-title-rearranger.ts",
     "sync-products": "npx tsx src/lib/sync-products.ts"
   },
   "dependencies": {
@@ -33,6 +41,7 @@
     "@types/react-dom": "latest",
     "eslint": "latest",
     "eslint-config-next": "latest",
+    "playwright": "^1.60.0",
     "tsx": "^4.22.2",
     "typescript": "latest"
   }

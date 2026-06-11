@@ -1,167 +1,245 @@
 # ☕ Alibaba Coffee Listing Bot
 
-Dashboard để kết nối tài khoản Alibaba.com, tải danh sách sản phẩm hiện có, và đăng **listing mới** qua API chính thức.
+Dashboard và CLI để kết nối Alibaba.com, đồng bộ catalog, và **nhân bản 5 listing** qua Seller Center (Playwright) — giống thao tác **Duplicate product** thủ công, với title được sắp xếp lại và ảnh nguồn được xác minh trước khi Submit.
 
-> **Chỉ dùng 3 bước trong README này:** (1) Xác thực → (2) Load from Alibaba → (3) Post listings.  
-> **Không dùng** các tính năng khác trên giao diện (New campaign, AI Optimize, v.v.) — chúng không nằm trong quy trình hỗ trợ và có thể gây dữ liệu không mong muốn.
-
----
-
-## Yêu Cầu Trước Khi Bắt Đầu
-
-1. **Máy tính có kết nối internet** (Windows, Mac, hoặc Linux)
-2. **Node.js** (phiên bản 18 trở lên) — [tải tại đây](https://nodejs.org/)
-3. **Tài khoản bán hàng trên Alibaba.com** đã kích hoạt Open Platform
-4. **App Key và App Secret** từ [Alibaba Open Platform](https://open.alibaba.com/)
-
-> **Chưa có App Key / App Secret?** Đăng nhập tài khoản Alibaba → vào "My Alibaba" → "Open Platform" → tạo ứng dụng mới. Bạn sẽ nhận được App Key và App Secret.
+> **Quy trình chính:** Cài đặt → **OAuth API (một lần)** → **Đăng nhập Seller Center Playwright (một lần)** → Chạy batch 5 listing.  
+> **Load from Alibaba** trên dashboard là tùy chọn (xem catalog cục bộ), **không bắt buộc** cho Playwright duplicate.
 
 ---
 
-## Cài Đặt & Khởi Chạy
+## Yêu cầu
 
-### Bước 1: Cài đặt dự án
+| Yêu cầu | Ghi chú |
+|---------|---------|
+| Node.js 18+ | [nodejs.org](https://nodejs.org/) |
+| Tài khoản Alibaba Seller | Open Platform đã kích hoạt |
+| App Key + App Secret | [open.alibaba.com](https://open.alibaba.com/) |
+| Chromium (Playwright) | `npx playwright install chromium` |
+
+---
+
+## Cài đặt
 
 ```bash
 npm install
+npx playwright install chromium
 ```
 
-### Bước 2: Cấu hình `.env.local`
-
-Tạo hoặc mở file **`.env.local`** ở thư mục gốc:
+### Cấu hình `.env.local`
 
 ```env
 ALIBABA_APP_KEY=app_key_của_bạn
 ALIBABA_APP_SECRET=app_secret_của_bạn
 NEXT_PUBLIC_ALIBABA_APP_KEY=app_key_của_bạn
 
-# Tùy chọn: số sản phẩm tải về khi bấm "Load from Alibaba" (mặc định 100)
+# Playwright (mặc định: cửa sổ browser có UI)
+PLAYWRIGHT_HEADLESS=false
+DUPLICATE_METHOD=playwright
+
+# Tùy chọn
 SYNC_PRODUCT_LIMIT=100
+LISTING_POOL_TIMEZONE=America/Los_Angeles
+# PHOTOBANK_GROUP_ID=
 ```
 
-> ⚠️ **Không chia sẻ App Secret.** Không commit `.env.local`, `tokens.json`, hoặc `campaigns.json`.
+> Không commit `.env.local`, `tokens.json`, `campaigns.json`, `.playwright-profile/`.
 
-### Bước 3: Chạy dashboard
+Xem thêm biến trong [`.env.example`](.env.example).
 
-```bash
-npm run dev
+---
+
+## Luồng hoàn chỉnh (từ đăng nhập đến 5 listing)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  MỘT LẦN: OAuth API (Settings)     → tokens.json               │
+│  MỘT LẦN: Seller Center login      → .playwright-profile/     │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  MỖI LẦN CHẠY BATCH (5 listing)                                │
+│  1. API: lấy pool theo Last updated (ngày lịch Seller Center) │
+│  2. Chọn ngẫu nhiên 5 ID khác nhau trong pool                   │
+│  3. Với mỗi ID — Playwright:                                    │
+│     · Tải ảnh nguồn (API) → manifest cục bộ                   │
+│     · Seller Center: tìm ID → Duplicate product                 │
+│     · Đổi Product name (rearrange + verify)                     │
+│     · Upload 6 ảnh (direct upload + verify sha256)              │
+│     · Submit                                                    │
+│  4. Ghi kết quả → scratch/listing-pairs.json                    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-Mở trình duyệt: **http://localhost:3000**
+### Bước 1 — Xác thực Open API (một lần)
 
-> **Muốn dashboard tự chạy mỗi khi bật máy?**  
-> Làm **một lần** theo hướng dẫn: [Tự động khởi động dashboard](docs/auto-start.md)  
-> (chọn hướng dẫn **Mac** hoặc **Windows** trong file đó)
+Cần cho: chọn pool sản phẩm, tải ảnh, photobank.
 
----
+1. `npm run dev` → mở http://localhost:3000/settings  
+2. **Open Alibaba authorization** → đăng nhập → **Authorize**  
+3. Sao chép URL callback (có `code=...`) → dán vào Settings → **Connect**  
+4. Token lưu tự động vào `tokens.json`
 
-## Quy Trình Sử Dụng (3 Bước)
+**Kiểm tra:** Dashboard — nút **Post listings** không còn báo chưa kết nối.
 
-### ⚠️ Chỉ dùng các bước dưới đây
-
-| Được phép | Không dùng |
-|-----------|------------|
-| **Settings** → kết nối Alibaba | **+ New campaign** / form tạo sản phẩm thủ công |
-| **Load from Alibaba** | **AI Optimize** |
-| **Post listings** | Các tab / nút khác ngoài Dashboard + Settings |
-
-Dữ liệu sản phẩm dùng cho đăng listing được lấy từ bước **Load from Alibaba** (lưu cục bộ trong `campaigns.json`). Không có lịch tự động — mọi lần đăng listing đều do bạn bấm **Post listings**.
+**Token hết hạn:** Lặp lại bước trên.
 
 ---
 
-### 1. Xác thực (Authentication) — một lần
+### Bước 2 — Đăng nhập Seller Center Playwright (một lần)
 
-1. Vào **Settings**: http://localhost:3000/settings  
-2. Nhấn **Open Alibaba authorization** → đăng nhập Alibaba → **Authorize**  
-3. Sau khi authorize, trình duyệt có thể chuyển tới trang lỗi — **bình thường**  
-4. **Sao chép toàn bộ URL** trên thanh địa chỉ (có tham số `code=...`)  
-5. Dán URL vào ô trên trang Settings (mã được trích tự động)  
-6. Nhấn **Connect**  
-7. Thấy thông báo xác thực thành công → token lưu vào `tokens.json` (tự động, không cần sửa tay)
-
-**Kiểm tra:** Quay lại Dashboard — các nút **Load from Alibaba** và **Post listings** không còn bị vô hiệu vì “chưa kết nối”.
-
-**Nếu hết hạn token:** Lặp lại các bước trên trên trang Settings.
-
----
-
-### 2. Load from Alibaba
-
-Dùng khi bạn muốn (hoặc cần) cập nhật danh sách sản phẩm từ tài khoản Alibaba vào dashboard.
-
-1. Mở **Dashboard**: http://localhost:3000  
-2. Nhấn **Load from Alibaba** (góc trên)  
-3. Đợi đến khi tải xong (có thể vài phút). **Giữ tab mở** trong lúc chạy  
-4. Bảng **Your products** hiển thị các dòng đã lưu (tối đa `SYNC_PRODUCT_LIMIT`, sắp xếp theo **Last updated** trên Alibaba)
-
-**Lưu ý:**
-
-- Lần mở dashboard **không** tự động gọi Alibaba — chỉ đọc file đã lưu cho đến khi bạn bấm **Load from Alibaba**  
-- Đây là **tải / đồng bộ danh sách** để xem và dùng làm nguồn cho bước 3, **không** phải đăng sản phẩm mới  
-- Số lượng trên Alibaba (ví dụ ~1.900) có thể lớn hơn số dòng trong app — app chỉ lấy **N sản phẩm cập nhật gần nhất** (`SYNC_PRODUCT_LIMIT`)
-
----
-
-### 3. Post listings
-
-Dùng khi bạn muốn **tạo listing mới** trên Alibaba (bản sao / biến thể dựa trên sản phẩm đã load).
-
-1. Đảm bảo đã **xác thực** (bước 1) và đã **Load from Alibaba** ít nhất một lần (bước 2)  
-2. Trên Dashboard, nhấn **Post listings**  
-3. Đợi batch chạy xong (tối đa **5** listing mỗi lần bấm, cách nhau vài giây). **Giữ tab mở** — có thể mất vài phút  
-4. Khi xong:
-   - Thông báo xanh: số listing đăng thành công  
-   - Tab **Listing history**: sản phẩm nào đã chạy bot gần đây  
-
-**Điều gì xảy ra mỗi lần bấm:**
-
-- Bot chọn ngẫu nhiên **5** sản phẩm từ **500** sản phẩm cập nhật gần nhất trong danh sách đã load  
-- Với mỗi sản phẩm: clone schema từ sản phẩm gốc trên Alibaba, điền title / ảnh / giá / thuộc tính / từ khóa / vận chuyển, rồi gọi API **tạo sản phẩm mới**  
-- Listing mới trên Alibaba thường ở trạng thái **Pending** (chờ duyệt) cho đến khi Alibaba phê duyệt — app **không** tự chuyển sang Active  
-
-**Lỗi:** Nếu thất bại, banner đỏ trên dashboard ghi lý do (kết nối, API Alibaba, v.v.). Xem thêm log trong terminal đang chạy `npm run dev`.
-
-**CLI (tùy chọn):** Cùng logic batch từ terminal:
+Cần cho: Duplicate product, sửa title, upload ảnh, Submit trên UI.
 
 ```bash
+npm run playwright-login
+```
+
+1. Cửa sổ Chromium mở → đăng nhập Seller Center (captcha nếu có)  
+2. Script phát hiện đã vào Seller Center → lưu session  
+3. Session nằm tại `.playwright-profile/` và `storage-state.json` (gitignored)
+
+**Lần sau:** `npm run playwright-login` báo session còn hiệu lực thì **không cần đăng nhập lại**.
+
+**Hết phiên / lỗi auth:** Chạy lại `npm run playwright-login`.
+
+---
+
+### Bước 3 — (Tùy chọn) Load from Alibaba
+
+Chỉ để **xem / đồng bộ catalog** trên dashboard (`campaigns.json`). **Không** dùng làm nguồn pool cho Playwright batch (pool lấy trực tiếp từ List API).
+
+1. Dashboard → **Load from Alibaba**  
+2. Đợi xong (giữ tab mở). Tối đa `SYNC_PRODUCT_LIMIT` sản phẩm, sắp theo Last updated
+
+---
+
+### Bước 4 — Chạy batch 5 listing
+
+**Mặc định:** 5 sản phẩm ngẫu nhiên, **Last updated** trong khoảng **26–31 May 2026** (ngày lịch theo `LISTING_POOL_TIMEZONE`, mặc định `America/Los_Angeles` — khớp cột Last updated trên Seller Center).
+
+#### Qua Dashboard
+
+1. `npm run dev` (chạy **local**, không phải Vercel)  
+2. Dashboard → **Post listings**
+
+#### Qua CLI
+
+```bash
+npm run duplicate-playwright
+# tương đương:
 npm run post-now
+
+# Tùy chỉnh khoảng ngày và số lượng:
+npx tsx scripts/playwright-duplicate-batch.ts 2026-05-26 2026-06-01 5
 ```
 
+**Kiểm tra pool trước khi chạy:**
+
+```bash
+npm run count-pool
+# Ví dụ: Pool size: 62, May 31: 49 sản phẩm
+```
+
+#### Trong mỗi listing, script tự động
+
+| Bước | Cách làm |
+|------|----------|
+| Chọn nguồn | Shuffle pool → 5 `product_id` **khác nhau** mỗi lần chạy (có thể trùng nguồn giữa các lần chạy khác) |
+| Ảnh | `get/v2` → tải bytes → `scratch/playwright-images/{id}/` → upload từng ảnh qua nút **Upload** trên form |
+| Title | Đọc title duplicate → `title-rearranger` → ghi `#productTitle` + verify |
+| Verify ảnh | So khớp sha256 / file_id trước Submit (fail-closed) |
+| Submit | Nút Submit trên form duplicate |
+
+**Kết quả:**
+
+- `scratch/listing-pairs.json` — cặp source → clone  
+- `scratch/last-batch-result.json` — tóm tắt lần chạy gần nhất  
+- `scratch/playwright-debug/` — screenshot khi lỗi
+
 ---
 
-## Dừng Dashboard
+## Kiểm thử từng phần (khuyến nghị lần đầu)
 
-Trong terminal: **`Ctrl + C`**. Chạy lại: `npm run dev`.
+```bash
+# 1. Title only (không ảnh, không submit)
+PLAYWRIGHT_STOP_AFTER_TITLE=true npm run duplicate-playwright
+
+# 2. Một sản phẩm — title + ảnh + verify
+npm run playwright-test-title -- <sourceProductId>
+npm run playwright-test-images -- <sourceProductId>
+
+# 3. Batch dừng sau ảnh (không submit)
+PLAYWRIGHT_STOP_AFTER_IMAGES=true npm run duplicate-playwright
+
+# 4. Full batch
+npm run duplicate-playwright
+```
+
+Để giữ browser mở sau test: `PLAYWRIGHT_INSPECT_MS=60000 npm run playwright-test-title -- <id>`
 
 ---
 
-## Xử Lý Sự Cố
+## Biến môi trường (Playwright)
+
+| Biến | Mặc định | Ý nghĩa |
+|------|----------|---------|
+| `DUPLICATE_METHOD` | `playwright` | `playwright` hoặc `api` (Open API cũ) |
+| `PLAYWRIGHT_HEADLESS` | `false` | `true` = không hiện cửa sổ browser |
+| `LISTING_POOL_TIMEZONE` | `America/Los_Angeles` | Múi giờ cột **Last updated** khi lọc pool |
+| `PLAYWRIGHT_STOP_AFTER_TITLE` | — | `true` = dừng sau đổi title |
+| `PLAYWRIGHT_STOP_AFTER_IMAGES` | — | `true` = dừng sau upload ảnh |
+| `PLAYWRIGHT_INSPECT_MS` | `0` | Giữ browser mở N ms sau test script |
+| `PHOTOBANK_GROUP_ID` | auto | Nhóm photobank khi upload ảnh qua API |
+
+---
+
+## Xử lý sự cố
 
 | Vấn đề | Giải pháp |
 |--------|-----------|
-| `npm install` lỗi | Cài [Node.js](https://nodejs.org/) v18+. |
-| Dashboard không mở | Kiểm tra `.env.local` có App Key / App Secret. |
-| Nút Load / Post bị tắt | Làm lại **bước 1** (Settings → Connect). |
-| Load from Alibaba lỗi | Kiểm tra token; thử Connect lại trên Settings. |
-| Post listings — 0 thành công | Đọc thông báo lỗi trên dashboard và log terminal; đảm bảo đã Load from Alibaba trước. |
-| Sản phẩm mới Pending trên Alibaba | Bình thường — chờ duyệt hoặc kiểm tra Seller Center, không phải lỗi nút Post. |
-| Token hết hạn | Connect lại trên Settings. |
+| Pool quá ít (ví dụ 13) | Đảm bảo code mới dùng List API + `LISTING_POOL_TIMEZONE`. Chạy `npm run count-pool`. |
+| `playwright-login` timeout | Đăng nhập xong trong cửa sổ Chromium; chạy lại. |
+| Không tìm thấy Product name / ảnh | Xem `scratch/playwright-debug/*.png`; chạy lại `playwright-login`. |
+| Image verify failed | Xem `scratch/playwright-debug/images-verify-*.json` |
+| Title verify failed | Xem `scratch/playwright-debug/title-verify-*.json` |
+| Token API hết hạn | Settings → Connect lại |
+| Clone ở Draft | Submit qua UI tạo bản nháp; kiểm tra Seller Center |
 
 ---
 
-## Cấu Trúc Dự Án (tham khảo)
+## Cấu trúc dự án (tham khảo)
 
 ```
-├── .env.local              ← App Key / Secret (không commit)
-├── tokens.json             ← OAuth token (tự động, không commit)
-├── campaigns.json          ← Sản phẩm đã load + lịch sử post (không commit)
-├── src/app/page.tsx        ← Dashboard: Load from Alibaba, Post listings
-├── src/app/settings/       ← Xác thực OAuth
+├── .env.local
+├── tokens.json                    ← OAuth
+├── .playwright-profile/           ← Seller Center session (một lần login)
+├── campaigns.json                 ← Load from Alibaba (tùy chọn)
+├── scratch/
+│   ├── listing-pairs.json         ← Kết quả duplicate
+│   ├── playwright-images/         ← Manifest + file ảnh tải về
+│   └── playwright-debug/          ← Screenshot / JSON debug
+├── scripts/
+│   ├── playwright-login-once.ts
+│   ├── playwright-duplicate-batch.ts
+│   ├── playwright-test-title.ts
+│   ├── playwright-test-images.ts
+│   └── count-pool-range.ts
 └── src/lib/
-    ├── automation-engine.ts  ← Logic Post listings
-    └── sync-campaigns.ts     ← Logic Load from Alibaba
+    ├── playwright-alibaba-auth.ts
+    ├── playwright-duplicate.ts
+    ├── playwright-duplicate-batch.ts
+    ├── playwright-image-prep.ts
+    ├── playwright-image-upload.ts
+    ├── duplicate-pool.ts          ← Pool theo Last updated (List API)
+    └── title-rearranger.ts
 ```
 
 ---
 
-Được xây dựng cho nhà xuất khẩu cà phê cần quy trình rõ ràng: kết nối → tải sản phẩm → đăng listing mới theo yêu cầu.
+## Tự khởi động dashboard
+
+Làm **một lần** theo [docs/auto-start.md](docs/auto-start.md) (Mac / Windows).
+
+---
+
+Được xây dựng cho nhà xuất khẩu cà phê: **OAuth một lần → Seller Center login một lần → tự động duplicate 5 listing** với title và ảnh đã kiểm tra.

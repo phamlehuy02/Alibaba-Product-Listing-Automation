@@ -9,7 +9,7 @@ import {
 } from '@/lib/sync-campaigns';
 import { getSyncProductLimit } from '@/lib/sync-campaigns';
 import { readSyncStatus } from '@/lib/sync-status';
-import { AutomationEngine } from '@/lib/automation-engine';
+import { runListingBatch } from '@/lib/run-listing-batch';
 import { revalidatePath } from 'next/cache';
 
 export async function saveCampaignAction(formData: any) {
@@ -60,9 +60,20 @@ export async function syncCampaignsAction() {
 }
 
 export async function runListingBatchAction() {
-  const result = await AutomationEngine.runListingBatch();
+  const result = await runListingBatch({
+    startDate: '2026-05-26',
+    endDate: '2026-06-01',
+    count: 5,
+  });
   revalidatePath('/');
-  return result;
+  return {
+    success: result.success,
+    attempted: result.attempted,
+    successful: result.successful,
+    failures: result.failures,
+    pairs: result.pairs,
+    error: result.error,
+  };
 }
 
 export async function loadCampaignsAction() {
