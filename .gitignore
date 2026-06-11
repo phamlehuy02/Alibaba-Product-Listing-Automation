@@ -12,7 +12,6 @@ yarn-error.log*
 .vercel
 tokens.json
 campaigns.json
-data/
 !data/title-vocabulary.json
 scratch/
 logs/

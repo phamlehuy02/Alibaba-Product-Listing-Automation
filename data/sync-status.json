@@ -1,0 +1,10 @@
+{
+  "phase": "complete",
+  "message": "Imported 100 products from Alibaba",
+  "currentPage": 3,
+  "importedCount": 100,
+  "alibabaTotal": 1970,
+  "startedAt": null,
+  "completedAt": "2026-06-11T02:08:02.610Z",
+  "error": null
+}

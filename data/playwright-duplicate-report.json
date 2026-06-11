@@ -1,0 +1,41 @@
+{
+  "updatedAt": "2026-06-10T06:57:08.972Z",
+  "results": [
+    {
+      "sourceId": "1601803842269",
+      "newId": null,
+      "sourceTitle": "High Quality Roasted Robusta Beans from Lam Dong, Vietnam OEM & ODM Service Low MOQ Best Price",
+      "newTitle": "Roasted High Quality Robusta Beans from Lam Dong, Vietnam OEM & ODM Service Low MOQ Best Price",
+      "success": false,
+      "timestamp": "2026-06-10T06:49:52.522Z",
+      "error": "Could not find the \"Product name\" field on the create-listing form"
+    },
+    {
+      "sourceId": "1601805374006",
+      "newId": null,
+      "sourceTitle": "Specialty Roasted Natural Process Arabica Beans from Northwest Vietnam Roasted Coffee Supplier OEM ODM",
+      "newTitle": "Roasted Specialty Natural Process Arabica Beans from Northwest Vietnam Roasted Coffee Supplier OEM ODM",
+      "success": false,
+      "timestamp": "2026-06-10T06:50:39.138Z",
+      "error": "Could not find the \"Product name\" field on the create-listing form"
+    },
+    {
+      "sourceId": "1601805374006",
+      "newId": null,
+      "sourceTitle": "Specialty Roasted Natural Process Arabica Beans from Northwest Vietnam Roasted Coffee Supplier OEM ODM",
+      "newTitle": "Specialty Roasted Natural Process Arabica Beans Northwest Vietnam Roasted Coffee Supplier OEM ODM from",
+      "success": false,
+      "timestamp": "2026-06-10T06:55:34.555Z",
+      "error": "Could not find the \"Product name\" field on the create-listing form"
+    },
+    {
+      "sourceId": "1601807768487",
+      "newId": null,
+      "sourceTitle": "Specialty Roasted Blend Arabica and Robusta Coffee Beans Natural & Honey Process Northwest Vietnam Supplier",
+      "newTitle": "Specialty Roasted Blend Arabica Robusta Coffee Beans Natural & Honey Process Northwest Vietnam Supplier and",
+      "success": false,
+      "timestamp": "2026-06-10T06:56:21.708Z",
+      "error": "Could not find the \"Product name\" field on the create-listing form"
+    }
+  ]
+}
